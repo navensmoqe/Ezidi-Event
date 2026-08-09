@@ -36,23 +36,27 @@ export function AdminSubmissionsClient({
   });
   const [rejectReason, setRejectReason] = useState('');
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
+  const fetchLiveSubmissions = async () => {
+    setIsRefreshing(true);
     try {
-      const stored = JSON.parse(localStorage.getItem('ezidi_submitted_events') || '[]');
-      if (Array.isArray(stored) && stored.length > 0) {
-        setSubmissions((prev) => {
-          const existingIds = new Set(prev.map((e) => e.id));
-          const toAdd = stored.filter(
-            (item: EventItem) => item && item.id && !existingIds.has(item.id) && item.status === 'pending'
-          );
-          if (toAdd.length > 0) {
-            return [...toAdd, ...prev];
-          }
-          return prev;
-        });
+      const res = await fetch('/api/events', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.events)) {
+          const pending = data.events.filter((e: EventItem) => e.status === 'pending');
+          setSubmissions(pending);
+        }
       }
     } catch {}
+    setIsRefreshing(false);
+  };
+
+  useEffect(() => {
+    fetchLiveSubmissions();
+    const interval = setInterval(fetchLiveSubmissions, 8000);
+    return () => clearInterval(interval);
   }, []);
 
   const adminContext = {

@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAdminLanguage } from '@/components/admin/AdminLanguageProvider';
 import { Organization } from '@/types/database';
 import { verifyOrganizationAction } from '@/lib/actions/admin';
 import { toggleDirectPublishingAction, suspendOrganizationAction, registerOrganizationAction } from '@/lib/actions/organizations';
-import { ShieldCheck, ShieldAlert, Check, X, AlertTriangle, Building2, Zap, ZapOff, PlusCircle, Search, Globe, Mail } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, Check, X, AlertTriangle, Building2, Zap, ZapOff, PlusCircle, Search, Globe, Mail, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 
 interface AdminOrgsClientProps {
@@ -17,22 +17,27 @@ export function AdminOrgsClient({ initialOrganizations }: AdminOrgsClientProps) 
   const [orgs, setOrgs] = useState<Organization[]>(initialOrganizations);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
+  const fetchLiveOrgs = useCallback(async () => {
+    setIsRefreshing(true);
     try {
-      const stored = JSON.parse(localStorage.getItem('ezidi_submitted_orgs') || '[]');
-      if (Array.isArray(stored) && stored.length > 0) {
-        setOrgs((prev) => {
-          const existingIds = new Set(prev.map((o) => o.id));
-          const toAdd = stored.filter((item: Organization) => item && item.id && !existingIds.has(item.id));
-          if (toAdd.length > 0) {
-            return [...toAdd, ...prev];
-          }
-          return prev;
-        });
+      const res = await fetch('/api/organizations', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.organizations)) {
+          setOrgs(data.organizations);
+        }
       }
     } catch {}
+    setIsRefreshing(false);
   }, []);
+
+  useEffect(() => {
+    fetchLiveOrgs();
+    const interval = setInterval(fetchLiveOrgs, 8000);
+    return () => clearInterval(interval);
+  }, [fetchLiveOrgs]);
 
   // Add Org Modal State
   const [showAddModal, setShowAddModal] = useState(false);
@@ -181,13 +186,25 @@ export function AdminOrgsClient({ initialOrganizations }: AdminOrgsClientProps) 
           </p>
         </div>
 
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md flex items-center gap-2 transition-all hover:scale-105"
-        >
-          <PlusCircle className="w-4 h-4" />
-          <span>{isRtl ? 'إضافة منظمة جديدة' : 'Add Organization'}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchLiveOrgs}
+            disabled={isRefreshing}
+            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs border border-slate-700 flex items-center gap-1.5 transition-all"
+            title={isRtl ? 'تحديث البيانات اللحظية' : 'Refresh Live Data'}
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-amber-400' : ''}`} />
+            <span className="hidden sm:inline">{isRtl ? 'تحديث حي' : 'Live Refresh'}</span>
+          </button>
+
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md flex items-center gap-2 transition-all hover:scale-105"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>{isRtl ? 'إضافة منظمة جديدة' : 'Add Organization'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter & Search Bar */}

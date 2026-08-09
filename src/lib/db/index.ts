@@ -24,6 +24,7 @@ import {
   INITIAL_NOTIFICATIONS,
 } from './mock-data';
 import { isProduction } from '@/lib/config/env';
+import { CloudSync } from './cloud-sync';
 
 // In-memory data store for development & demo mode
 class InMemoryDb {
@@ -163,6 +164,19 @@ export const db = {
     },
 
     async findAllAdmin(filters: { status?: string; search?: string } = {}): Promise<EventItem[]> {
+      const cloudEvents = await CloudSync.getEvents();
+      const existingIds = new Set(memory.events.map((e) => e.id));
+      for (const ev of cloudEvents) {
+        if (!existingIds.has(ev.id)) {
+          memory.events.unshift(ev);
+        } else {
+          const idx = memory.events.findIndex((e) => e.id === ev.id);
+          if (idx !== -1) {
+            memory.events[idx] = { ...memory.events[idx], ...ev };
+          }
+        }
+      }
+
       let results = [...memory.events];
 
       if (filters.status && filters.status !== 'all') {
@@ -193,25 +207,32 @@ export const db = {
         updated_at: new Date().toISOString(),
       };
       memory.events.unshift(newEvent);
+      await CloudSync.saveEvent(newEvent);
       return newEvent;
     },
 
     async update(id: string, updates: Partial<EventItem>): Promise<EventItem | null> {
       const index = memory.events.findIndex((e) => e.id === id);
-      if (index === -1) return null;
+      if (index === -1) {
+        await CloudSync.updateEvent(id, updates);
+        return null;
+      }
 
       memory.events[index] = {
         ...memory.events[index],
         ...updates,
         updated_at: new Date().toISOString(),
       };
+      await CloudSync.updateEvent(id, updates);
       return memory.events[index];
     },
 
     async softDelete(id: string): Promise<boolean> {
       const index = memory.events.findIndex((e) => e.id === id);
-      if (index === -1) return false;
-      memory.events[index].deleted_at = new Date().toISOString();
+      if (index !== -1) {
+        memory.events[index].deleted_at = new Date().toISOString();
+      }
+      await CloudSync.updateEvent(id, { deleted_at: new Date().toISOString() });
       return true;
     },
 
@@ -281,20 +302,56 @@ export const db = {
 
   organizations: {
     async findVerifiedPublic(): Promise<Organization[]> {
+      const cloudOrgs = await CloudSync.getOrganizations();
+      const existingIds = new Set(memory.organizations.map((o) => o.id));
+      for (const org of cloudOrgs) {
+        if (!existingIds.has(org.id)) {
+          memory.organizations.unshift(org);
+        }
+      }
       return memory.organizations.filter(
         (o) => o.verification_status === 'verified' && o.organization_status === 'active'
       );
     },
 
     async findBySlug(slug: string): Promise<Organization | null> {
-      return memory.organizations.find((o) => o.slug === slug) || null;
+      let org = memory.organizations.find((o) => o.slug === slug);
+      if (!org) {
+        const cloudOrgs = await CloudSync.getOrganizations();
+        org = cloudOrgs.find((o) => o.slug === slug);
+        if (org && !memory.organizations.some((o) => o.id === org?.id)) {
+          memory.organizations.unshift(org);
+        }
+      }
+      return org || null;
     },
 
     async findById(id: string): Promise<Organization | null> {
-      return memory.organizations.find((o) => o.id === id) || null;
+      let org = memory.organizations.find((o) => o.id === id);
+      if (!org) {
+        const cloudOrgs = await CloudSync.getOrganizations();
+        org = cloudOrgs.find((o) => o.id === id);
+        if (org && !memory.organizations.some((o) => o.id === org?.id)) {
+          memory.organizations.unshift(org);
+        }
+      }
+      return org || null;
     },
 
     async findAllAdmin(): Promise<Organization[]> {
+      const cloudOrgs = await CloudSync.getOrganizations();
+      const existingIds = new Set(memory.organizations.map((o) => o.id));
+      for (const org of cloudOrgs) {
+        if (!existingIds.has(org.id)) {
+          memory.organizations.unshift(org);
+        } else {
+          // Sync any status updates
+          const idx = memory.organizations.findIndex((o) => o.id === org.id);
+          if (idx !== -1) {
+            memory.organizations[idx] = { ...memory.organizations[idx], ...org };
+          }
+        }
+      }
       return [...memory.organizations];
     },
 
@@ -306,12 +363,18 @@ export const db = {
         updated_at: new Date().toISOString(),
       };
       memory.organizations.unshift(newOrg);
+      // Persist globally
+      await CloudSync.saveOrganization(newOrg);
       return newOrg;
     },
 
     async update(id: string, updates: Partial<Organization>): Promise<Organization | null> {
       const index = memory.organizations.findIndex((o) => o.id === id);
-      if (index === -1) return null;
+      if (index === -1) {
+        // Attempt cloud update
+        await CloudSync.updateOrganization(id, updates);
+        return null;
+      }
 
       // Suspension trigger enforcement: If status set to suspended, direct publishing is immediately disabled
       if (updates.organization_status === 'suspended') {
@@ -323,6 +386,8 @@ export const db = {
         ...updates,
         updated_at: new Date().toISOString(),
       };
+      // Persist globally
+      await CloudSync.updateOrganization(id, updates);
       return memory.organizations[index];
     },
 
@@ -338,6 +403,18 @@ export const db = {
 
   categories: {
     async getAll(): Promise<EventCategory[]> {
+      const cloudCats = await CloudSync.getCategories();
+      const existingIds = new Set(memory.categories.map((c) => c.id));
+      for (const cat of cloudCats) {
+        if (!existingIds.has(cat.id)) {
+          memory.categories.push(cat);
+        } else {
+          const idx = memory.categories.findIndex((c) => c.id === cat.id);
+          if (idx !== -1) {
+            memory.categories[idx] = { ...memory.categories[idx], ...cat };
+          }
+        }
+      }
       return [...memory.categories];
     },
     async findBySlug(slug: string): Promise<EventCategory | null> {
@@ -349,18 +426,25 @@ export const db = {
         id: `cat-${Date.now()}`,
       };
       memory.categories.push(newCat);
+      await CloudSync.saveCategory(newCat);
       return newCat;
     },
     async update(id: string, updates: Partial<EventCategory>): Promise<EventCategory | null> {
       const idx = memory.categories.findIndex((c) => c.id === id);
-      if (idx === -1) return null;
+      if (idx === -1) {
+        await CloudSync.updateCategory(id, updates);
+        return null;
+      }
       memory.categories[idx] = { ...memory.categories[idx], ...updates };
+      await CloudSync.updateCategory(id, updates);
       return memory.categories[idx];
     },
     async delete(id: string): Promise<boolean> {
       const idx = memory.categories.findIndex((c) => c.id === id);
-      if (idx === -1) return false;
-      memory.categories.splice(idx, 1);
+      if (idx !== -1) {
+        memory.categories.splice(idx, 1);
+      }
+      await CloudSync.deleteCategory(id);
       return true;
     },
   },
@@ -497,6 +581,18 @@ export const db = {
     },
 
     async getAll(): Promise<UserProfile[]> {
+      const cloudUsers = await CloudSync.getUsers();
+      const existingIds = new Set(memory.users.map((u) => u.id));
+      for (const u of cloudUsers) {
+        if (!existingIds.has(u.id)) {
+          memory.users.push(u);
+        } else {
+          const idx = memory.users.findIndex((us) => us.id === u.id);
+          if (idx !== -1) {
+            memory.users[idx] = { ...memory.users[idx], ...u };
+          }
+        }
+      }
       return [...memory.users];
     },
 
@@ -512,28 +608,35 @@ export const db = {
         updated_at: new Date().toISOString(),
       };
       memory.users.push(newUser);
+      await CloudSync.saveUser(newUser);
       return newUser;
     },
 
     async update(userId: string, updates: Partial<UserProfile>): Promise<UserProfile | null> {
       const user = memory.users.find((u) => u.id === userId);
-      if (!user) return null;
-      Object.assign(user, updates, { updated_at: new Date().toISOString() });
-      return user;
+      if (user) {
+        Object.assign(user, updates, { updated_at: new Date().toISOString() });
+      }
+      await CloudSync.updateUser(userId, updates);
+      return user || null;
     },
 
     async updateRole(userId: string, role: UserProfile['role']): Promise<boolean> {
       const user = memory.users.find((u) => u.id === userId);
-      if (!user) return false;
-      user.role = role;
-      user.updated_at = new Date().toISOString();
+      if (user) {
+        user.role = role;
+        user.updated_at = new Date().toISOString();
+      }
+      await CloudSync.updateUser(userId, { role, updated_at: new Date().toISOString() });
       return true;
     },
 
     async delete(userId: string): Promise<boolean> {
       const idx = memory.users.findIndex((u) => u.id === userId);
-      if (idx === -1) return false;
-      memory.users.splice(idx, 1);
+      if (idx !== -1) {
+        memory.users.splice(idx, 1);
+      }
+      await CloudSync.deleteUser(userId);
       return true;
     },
   },
