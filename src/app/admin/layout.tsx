@@ -1,6 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { db } from '@/lib/db';
+import '@/app/globals.css';
 import {
   LayoutDashboard,
   Calendar,
@@ -48,7 +49,9 @@ export default async function AdminLayout({
   ];
 
   return (
-    <div className="min-h-screen bg-[#070A10] text-white flex flex-col md:flex-row">
+    <html lang="en" className="dark">
+      <body className="min-h-screen bg-[#070A10] text-slate-100 antialiased selection:bg-amber-500 selection:text-slate-950">
+        <div className="min-h-screen bg-[#070A10] text-white flex flex-col md:flex-row">
       {/* Admin Sidebar */}
       <aside className="w-full md:w-64 bg-slate-950 border-r border-slate-800/80 p-5 flex flex-col justify-between shrink-0">
         <div className="space-y-6">
@@ -125,5 +128,7 @@ export default async function AdminLayout({
         {children}
       </main>
     </div>
+      </body>
+    </html>
   );
 }
