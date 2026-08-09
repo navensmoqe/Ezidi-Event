@@ -6,6 +6,7 @@ import { checkRateLimit } from '@/lib/security/rate-limiter';
 import { logAuditEvent } from '@/lib/services/audit';
 import { NotificationService } from '@/lib/services/notifications';
 import { UserRole, Organization } from '@/types/database';
+import { revalidatePath } from 'next/cache';
 
 function normalizeUrl(url?: string | null): string | null {
   if (!url || !url.trim()) return null;
@@ -108,6 +109,11 @@ export async function registerOrganizationAction(formData: unknown, userContext?
     `"${newOrg.name}" has registered and submitted documents for administrator verification.`,
     '/admin/organizations'
   );
+
+  try {
+    revalidatePath('/admin/organizations');
+    revalidatePath('/admin');
+  } catch {}
 
   return {
     success: true,

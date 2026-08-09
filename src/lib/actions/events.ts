@@ -9,6 +9,7 @@ import { logAuditEvent } from '@/lib/services/audit';
 import { NotificationService } from '@/lib/services/notifications';
 import { EventItem, UserRole } from '@/types/database';
 import { generateGoogleMapsUrl } from '@/lib/maps/google-maps';
+import { revalidatePath } from 'next/cache';
 
 const createEventSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters').max(200),
@@ -185,6 +186,12 @@ export async function createEventAction(formData: unknown, userContext?: { id: s
       '/admin/submissions'
     );
   }
+
+  try {
+    revalidatePath('/admin/submissions');
+    revalidatePath('/admin/events');
+    revalidatePath('/admin');
+  } catch {}
 
   return {
     success: true,

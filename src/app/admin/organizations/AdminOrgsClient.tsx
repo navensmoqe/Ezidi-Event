@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAdminLanguage } from '@/components/admin/AdminLanguageProvider';
 import { Organization } from '@/types/database';
 import { verifyOrganizationAction } from '@/lib/actions/admin';
@@ -17,6 +17,22 @@ export function AdminOrgsClient({ initialOrganizations }: AdminOrgsClientProps) 
   const [orgs, setOrgs] = useState<Organization[]>(initialOrganizations);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('ezidi_submitted_orgs') || '[]');
+      if (Array.isArray(stored) && stored.length > 0) {
+        setOrgs((prev) => {
+          const existingIds = new Set(prev.map((o) => o.id));
+          const toAdd = stored.filter((item: Organization) => item && item.id && !existingIds.has(item.id));
+          if (toAdd.length > 0) {
+            return [...toAdd, ...prev];
+          }
+          return prev;
+        });
+      }
+    } catch {}
+  }, []);
 
   // Add Org Modal State
   const [showAddModal, setShowAddModal] = useState(false);

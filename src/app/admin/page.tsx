@@ -2,6 +2,9 @@ import React from 'react';
 import { db } from '@/lib/db';
 import { AdminOverviewClient } from './AdminOverviewClient';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default async function AdminOverviewPage() {
   const allEvents = await db.events.findAllAdmin();
   const publishedEvents = allEvents.filter((e) => e.status === 'published');

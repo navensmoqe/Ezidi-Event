@@ -113,8 +113,14 @@ export function OrgRegisterClientForm({ countries, cities }: OrgRegisterClientFo
 
     if (!res.success) {
       setError(res.error || 'Failed to submit registration.');
-    } else {
+    } else if (res.organization) {
       setSuccessOrg(res.organization);
+      try {
+        const stored = JSON.parse(localStorage.getItem('ezidi_submitted_orgs') || '[]');
+        const filtered = stored.filter((o: any) => o.id !== res.organization.id);
+        filtered.unshift(res.organization);
+        localStorage.setItem('ezidi_submitted_orgs', JSON.stringify(filtered));
+      } catch {}
     }
   };
 

@@ -3,8 +3,11 @@ import { db } from '@/lib/db';
 import { AdminSubmissionsClient } from './AdminSubmissionsClient';
 import { Inbox } from 'lucide-react';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export const metadata = {
-  title: 'Submissions Queue | Admin Dashboard',
+  title: 'طابور مراجعة الطلبات | Submissions Queue',
 };
 
 export default async function AdminSubmissionsPage() {

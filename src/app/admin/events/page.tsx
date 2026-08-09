@@ -4,8 +4,11 @@ import { AdminEventsClient } from './AdminEventsClient';
 import { Calendar, ShieldCheck, PlusCircle } from 'lucide-react';
 import Link from 'next/link';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export const metadata = {
-  title: 'All Events Management | Admin Dashboard',
+  title: 'إدارة الفعاليات | All Events Management',
 };
 
 export default async function AdminEventsPage() {

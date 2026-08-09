@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAdminLanguage } from '@/components/admin/AdminLanguageProvider';
 import { EventItem } from '@/types/database';
 import { updateEventVerificationAction } from '@/lib/actions/admin';
@@ -18,6 +18,22 @@ export function AdminEventsClient({ initialEvents }: AdminEventsClientProps) {
   const [events, setEvents] = useState<EventItem[]>(initialEvents);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('ezidi_submitted_events') || '[]');
+      if (Array.isArray(stored) && stored.length > 0) {
+        setEvents((prev) => {
+          const existingIds = new Set(prev.map((e) => e.id));
+          const toAdd = stored.filter((item: EventItem) => item && item.id && !existingIds.has(item.id));
+          if (toAdd.length > 0) {
+            return [...toAdd, ...prev];
+          }
+          return prev;
+        });
+      }
+    } catch {}
+  }, []);
 
   // Reason modal state for destructive actions
   const [actionModal, setActionModal] = useState<{

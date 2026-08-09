@@ -4,6 +4,9 @@ import '@/app/globals.css';
 import { AdminLanguageProvider } from '@/components/admin/AdminLanguageProvider';
 import { AdminSidebarClient } from '@/components/admin/AdminSidebarClient';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default async function AdminLayout({
   children,
 }: {

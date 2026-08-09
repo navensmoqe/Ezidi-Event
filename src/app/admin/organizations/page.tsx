@@ -3,6 +3,9 @@ import { db } from '@/lib/db';
 import { AdminOrgsClient } from './AdminOrgsClient';
 import { Building2 } from 'lucide-react';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export const metadata = {
   title: 'Organization Verification & Direct Publishing | Admin Dashboard',
 };
