@@ -3,10 +3,19 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MapPin, Search } from 'lucide-react';
 
+export interface LocationDetails {
+  lat: number;
+  lon: number;
+  address?: string;
+  cityName?: string;
+  countryName?: string;
+  countryCode?: string;
+}
+
 interface LocationPickerProps {
   initialLatitude?: number;
   initialLongitude?: number;
-  onLocationSelect: (lat: number, lon: number, address?: string) => void;
+  onLocationSelect: (lat: number, lon: number, address?: string, details?: LocationDetails) => void;
 }
 
 export function LocationPicker({
@@ -24,6 +33,36 @@ export function LocationPicker({
   });
   const [addressSearch, setAddressSearch] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+
+  // Reverse geocoding helper to extract city, country, postal code
+  const fetchLocationDetails = async (lat: number, lon: number) => {
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1`
+      );
+      const data = await res.json();
+      if (data && data.address) {
+        const addr = data.address;
+        const cityName = addr.city || addr.town || addr.village || addr.municipality || addr.county || '';
+        const countryName = addr.country || '';
+        const countryCode = (addr.country_code || '').toUpperCase();
+        const fullAddr = data.display_name || '';
+
+        onLocationSelect(lat, lon, fullAddr, {
+          lat,
+          lon,
+          address: fullAddr,
+          cityName,
+          countryName,
+          countryCode,
+        });
+      } else {
+        onLocationSelect(lat, lon);
+      }
+    } catch {
+      onLocationSelect(lat, lon);
+    }
+  };
 
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -89,13 +128,13 @@ export function LocationPicker({
       marker.on('dragend', () => {
         const position = marker.getLatLng();
         setCoords({ lat: position.lat, lon: position.lng });
-        onLocationSelect(position.lat, position.lng);
+        fetchLocationDetails(position.lat, position.lng);
       });
 
       map.on('click', (e: any) => {
         marker.setLatLng(e.latlng);
         setCoords({ lat: e.latlng.lat, lon: e.latlng.lng });
-        onLocationSelect(e.latlng.lat, e.latlng.lng);
+        fetchLocationDetails(e.latlng.lat, e.latlng.lng);
       });
     }
 
@@ -110,7 +149,7 @@ export function LocationPicker({
     };
   }, []);
 
-  // Quick geocoding query using OpenStreetMap Nominatim
+  // Worldwide geocoding search query using OpenStreetMap Nominatim
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!addressSearch.trim()) return;
@@ -118,19 +157,30 @@ export function LocationPicker({
     setIsSearching(true);
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addressSearch)}`
+        `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(addressSearch)}`
       );
       const data = await res.json();
       if (data && data.length > 0) {
         const first = data[0];
         const newLat = parseFloat(first.lat);
         const newLon = parseFloat(first.lon);
+        const addr = first.address || {};
+        const cityName = addr.city || addr.town || addr.village || addr.municipality || addr.county || addressSearch;
+        const countryName = addr.country || '';
+        const countryCode = (addr.country_code || '').toUpperCase();
 
         setCoords({ lat: newLat, lon: newLon });
-        onLocationSelect(newLat, newLon, first.display_name);
+        onLocationSelect(newLat, newLon, first.display_name, {
+          lat: newLat,
+          lon: newLon,
+          address: first.display_name,
+          cityName,
+          countryName,
+          countryCode,
+        });
 
         if (mapInstanceRef.current && markerRef.current) {
-          mapInstanceRef.current.setView([newLat, newLon], 15);
+          mapInstanceRef.current.setView([newLat, newLon], 14);
           markerRef.current.setLatLng([newLat, newLon]);
         }
       }
@@ -148,17 +198,17 @@ export function LocationPicker({
           type="text"
           value={addressSearch}
           onChange={(e) => setAddressSearch(e.target.value)}
-          placeholder="Search place, street, or city (e.g. Pariser Platz Berlin)..."
-          className="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+          placeholder="ابحث عن أي مدينة أو شارع أو موقع في العالم (e.g. Lalish, Berlin, Erbil, Paris, Lincoln)..."
+          className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
         />
         <button
           type="button"
           onClick={handleSearch}
           disabled={isSearching}
-          className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-semibold text-xs sm:text-sm border border-slate-700 flex items-center gap-1.5 transition-colors"
+          className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs sm:text-sm shadow-md flex items-center gap-1.5 transition-all"
         >
-          <Search className="w-3.5 h-3.5" />
-          <span>{isSearching ? 'Searching...' : 'Locate'}</span>
+          <Search className="w-4 h-4" />
+          <span>{isSearching ? 'جاري البحث...' : 'تحديد الموقع'}</span>
         </button>
       </div>
 
@@ -168,7 +218,7 @@ export function LocationPicker({
       />
 
       <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-        <span>Click on map or drag pin to position venue.</span>
+        <span>انقر على أي نقطة في الخريطة أو اسحب المؤشر لتحديد المدينة والعنوان تلقائياً.</span>
         <span className="font-mono text-amber-400">
           {coords.lat.toFixed(5)}, {coords.lon.toFixed(5)}
         </span>

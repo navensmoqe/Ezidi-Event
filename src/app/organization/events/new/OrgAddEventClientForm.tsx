@@ -65,13 +65,52 @@ export function OrgAddEventClientForm({
     ? cities.filter((c) => c.country_id === formData.country_id)
     : cities;
 
-  const handleLocationSelect = (lat: number, lon: number, address?: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      latitude: lat,
-      longitude: lon,
-      full_address: address || prev.full_address,
-    }));
+  const [customCityName, setCustomCityName] = useState('');
+  const [isCustomCity, setIsCustomCity] = useState(false);
+
+  const handleLocationSelect = (lat: number, lon: number, address?: string, details?: any) => {
+    setFormData((prev) => {
+      let matchedCountryId = prev.country_id;
+      let matchedCityId = prev.city_id;
+
+      if (details?.countryCode) {
+        const c = countries.find(
+          (cnt) => cnt.code.toLowerCase() === details.countryCode.toLowerCase()
+        );
+        if (c) matchedCountryId = c.id;
+      }
+
+      if (details?.cityName) {
+        const existingCity = cities.find(
+          (ct) =>
+            ct.name_en.toLowerCase() === details.cityName.toLowerCase() ||
+            ct.name_ar === details.cityName
+        );
+        if (existingCity) {
+          matchedCityId = existingCity.id;
+          setIsCustomCity(false);
+          setCustomCityName('');
+        } else {
+          matchedCityId = `custom:${details.cityName}`;
+          setCustomCityName(details.cityName);
+          setIsCustomCity(true);
+        }
+      }
+
+      return {
+        ...prev,
+        latitude: lat,
+        longitude: lon,
+        full_address: address || prev.full_address,
+        country_id: matchedCountryId,
+        city_id: matchedCityId,
+      };
+    });
+  };
+
+  const handleCustomCityChange = (name: string) => {
+    setCustomCityName(name);
+    setFormData((prev) => ({ ...prev, city_id: name ? `custom:${name}` : '' }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -86,7 +125,12 @@ export function OrgAddEventClientForm({
       email: formData.contact_email || 'berlin@demo-yazidi.org',
     };
 
-    const res = await createEventAction(formData, userContext);
+    const submissionData = {
+      ...formData,
+      city_id: isCustomCity && customCityName ? `custom:${customCityName}` : formData.city_id,
+    };
+
+    const res = await createEventAction(submissionData, userContext);
     setLoading(false);
 
     if (!res.success) {
@@ -292,20 +336,55 @@ export function OrgAddEventClientForm({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              City *
-            </label>
-            <select
-              value={formData.city_id}
-              onChange={(e) => setFormData({ ...formData, city_id: e.target.value })}
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            >
-              {filteredCities.map((ct) => (
-                <option key={ct.id} value={ct.id}>
-                  {ct.name_en}
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-semibold text-slate-300">
+                City *
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCustomCity(!isCustomCity);
+                  if (!isCustomCity) {
+                    setCustomCityName('');
+                  }
+                }}
+                className="text-[11px] text-amber-400 hover:text-amber-300 underline font-semibold"
+              >
+                {isCustomCity ? '← Choose from list' : '+ Enter custom city worldwide'}
+              </button>
+            </div>
+
+            {isCustomCity ? (
+              <input
+                type="text"
+                required
+                value={customCityName}
+                onChange={(e) => handleCustomCityChange(e.target.value)}
+                placeholder="Type any city worldwide (e.g. Lalish, Duhok, Hanover, Sydney...)"
+                className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-amber-500/80 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              />
+            ) : (
+              <select
+                value={formData.city_id}
+                onChange={(e) => {
+                  if (e.target.value === 'custom') {
+                    setIsCustomCity(true);
+                  } else {
+                    setFormData({ ...formData, city_id: e.target.value });
+                  }
+                }}
+                className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              >
+                {filteredCities.map((ct) => (
+                  <option key={ct.id} value={ct.id}>
+                    {ct.name_en}
+                  </option>
+                ))}
+                <option value="custom">
+                  ✍️ Other worldwide city (type / pick on map)...
                 </option>
-              ))}
-            </select>
+              </select>
+            )}
           </div>
 
           <div className="sm:col-span-2">

@@ -102,13 +102,23 @@ export async function createEventAction(formData: unknown, userContext?: { id: s
   const slug = `${baseSlug}-${Date.now().toString().slice(-4)}`;
   const google_maps_url = generateGoogleMapsUrl(data.latitude, data.longitude);
 
+  // Dynamic Worldwide City/Country resolution: if user entered or geocoded any worldwide city
+  let resolvedCityId = data.city_id;
+  let resolvedCountryId = data.country_id;
+
+  if (data.city_id && (data.city_id.startsWith('custom:') || !data.city_id.startsWith('city-'))) {
+    const rawCityName = data.city_id.replace(/^custom:/, '');
+    const cityObj = await db.cities.findOrCreateByName(rawCityName, resolvedCountryId, data.latitude, data.longitude);
+    resolvedCityId = cityObj.id;
+  }
+
   // 6. Duplicate Event Detection
   const existingEvents = await db.events.findAllAdmin();
   const dupCheck = detectDuplicateEvent(
     {
       title: data.title,
       date: data.date,
-      city_id: data.city_id,
+      city_id: resolvedCityId,
       latitude: data.latitude,
       longitude: data.longitude,
     },
@@ -131,8 +141,8 @@ export async function createEventAction(formData: unknown, userContext?: { id: s
     start_time: data.start_time,
     end_time: data.end_time || null,
     timezone: data.timezone,
-    country_id: data.country_id,
-    city_id: data.city_id,
+    country_id: resolvedCountryId,
+    city_id: resolvedCityId,
     full_address: data.full_address,
     postal_code: data.postal_code || null,
     street: data.street || null,
@@ -147,11 +157,12 @@ export async function createEventAction(formData: unknown, userContext?: { id: s
     visibility,
     event_verification_status: verificationStatus,
     is_demo: true,
+    is_featured: false,
     source_url: data.source_url || null,
     contact_email: data.contact_email || null,
     contact_phone: data.contact_phone || null,
     official_website: data.official_website || null,
-    created_by: userContext?.id || null,
+    created_by: userContext?.id || 'anonymous-user',
   });
 
   // 8. Audit Log

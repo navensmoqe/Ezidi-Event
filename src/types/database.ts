@@ -66,6 +66,8 @@ export interface UserProfile {
   full_name: string;
   avatar_url?: string | null;
   role: UserRole;
+  is_active?: boolean;
+  is_2fa_enabled?: boolean;
   created_at: string;
   updated_at: string;
 }

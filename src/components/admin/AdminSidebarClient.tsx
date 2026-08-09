@@ -97,13 +97,13 @@ export function AdminSidebarClient({
         </div>
 
         {/* Super Admin Status Card */}
-        <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span className="font-semibold text-slate-200">{t('superAdmin')}</span>
+        <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2 min-w-0">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="font-bold text-slate-200 truncate">{t('superAdmin')}</span>
           </div>
-          <span className="px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 text-[10px] font-mono border border-emerald-800 font-bold">
-            {t('twoFactorActive')}
+          <span className="px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 text-[10px] font-mono border border-emerald-800 font-bold shrink-0">
+            2FA ✓
           </span>
         </div>
 

@@ -343,11 +343,47 @@ export const db = {
     async findBySlug(slug: string): Promise<EventCategory | null> {
       return memory.categories.find((c) => c.slug === slug) || null;
     },
+    async create(catData: Omit<EventCategory, 'id'>): Promise<EventCategory> {
+      const newCat: EventCategory = {
+        ...catData,
+        id: `cat-${Date.now()}`,
+      };
+      memory.categories.push(newCat);
+      return newCat;
+    },
+    async update(id: string, updates: Partial<EventCategory>): Promise<EventCategory | null> {
+      const idx = memory.categories.findIndex((c) => c.id === id);
+      if (idx === -1) return null;
+      memory.categories[idx] = { ...memory.categories[idx], ...updates };
+      return memory.categories[idx];
+    },
+    async delete(id: string): Promise<boolean> {
+      const idx = memory.categories.findIndex((c) => c.id === id);
+      if (idx === -1) return false;
+      memory.categories.splice(idx, 1);
+      return true;
+    },
   },
 
   countries: {
     async getAll(): Promise<Country[]> {
       return [...memory.countries];
+    },
+    async findOrCreateByCode(countryCode: string, countryName?: string): Promise<Country> {
+      const code = countryCode.toUpperCase();
+      let found = memory.countries.find((c) => c.code === code || c.id === `c-${code.toLowerCase()}`);
+      if (!found) {
+        found = {
+          id: `c-${code.toLowerCase()}`,
+          code,
+          name_en: countryName || code,
+          name_ar: countryName || code,
+          name_de: countryName || code,
+          name_fr: countryName || code,
+        };
+        memory.countries.push(found);
+      }
+      return found;
     },
   },
 
@@ -357,6 +393,34 @@ export const db = {
     },
     async findByCountry(countryId: string): Promise<City[]> {
       return memory.cities.filter((c) => c.country_id === countryId);
+    },
+    async create(cityData: Omit<City, 'id'>): Promise<City> {
+      const newCity: City = {
+        ...cityData,
+        id: `city-${Date.now()}`,
+      };
+      memory.cities.push(newCity);
+      return newCity;
+    },
+    async findOrCreateByName(cityName: string, countryId: string, lat?: number, lon?: number): Promise<City> {
+      const cleanName = cityName.trim();
+      let city = memory.cities.find(
+        (c) => c.name_en.toLowerCase() === cleanName.toLowerCase() || c.name_ar === cleanName
+      );
+      if (!city) {
+        city = {
+          id: `city-${cleanName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now().toString().slice(-4)}`,
+          country_id: countryId,
+          name_en: cleanName,
+          name_ar: cleanName,
+          name_de: cleanName,
+          name_fr: cleanName,
+          latitude: lat || 0,
+          longitude: lon || 0,
+        };
+        memory.cities.push(city);
+      }
+      return city;
     },
   },
 
@@ -436,11 +500,40 @@ export const db = {
       return [...memory.users];
     },
 
+    async create(userData: Partial<UserProfile> & { email: string; full_name: string; role: UserProfile['role'] }): Promise<UserProfile> {
+      const newUser: UserProfile = {
+        id: `user-${Date.now()}`,
+        email: userData.email.toLowerCase().trim(),
+        full_name: userData.full_name,
+        role: userData.role,
+        is_active: userData.is_active !== undefined ? userData.is_active : true,
+        is_2fa_enabled: userData.is_2fa_enabled || false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      memory.users.push(newUser);
+      return newUser;
+    },
+
+    async update(userId: string, updates: Partial<UserProfile>): Promise<UserProfile | null> {
+      const user = memory.users.find((u) => u.id === userId);
+      if (!user) return null;
+      Object.assign(user, updates, { updated_at: new Date().toISOString() });
+      return user;
+    },
+
     async updateRole(userId: string, role: UserProfile['role']): Promise<boolean> {
       const user = memory.users.find((u) => u.id === userId);
       if (!user) return false;
       user.role = role;
       user.updated_at = new Date().toISOString();
+      return true;
+    },
+
+    async delete(userId: string): Promise<boolean> {
+      const idx = memory.users.findIndex((u) => u.id === userId);
+      if (idx === -1) return false;
+      memory.users.splice(idx, 1);
       return true;
     },
   },
