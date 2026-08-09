@@ -7,21 +7,30 @@ import { logAuditEvent } from '@/lib/services/audit';
 import { NotificationService } from '@/lib/services/notifications';
 import { UserRole, Organization } from '@/types/database';
 
+function normalizeUrl(url?: string | null): string | null {
+  if (!url || !url.trim()) return null;
+  const trimmed = url.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  return `https://${trimmed}`;
+}
+
 const orgRegistrationSchema = z.object({
-  name: z.string().min(3, 'Organization name must be at least 3 characters'),
+  name: z.string().min(2, 'Organization name must be at least 2 characters'),
   name_ar: z.string().optional(),
-  description: z.string().min(10, 'Description must be at least 10 characters'),
+  description: z.string().min(5, 'Description must be at least 5 characters'),
   description_ar: z.string().optional(),
   organization_type: z.string().min(2, 'Organization type is required'),
   country_id: z.string().min(1, 'Country is required'),
   city_id: z.string().min(1, 'City is required'),
-  full_address: z.string().min(5, 'Full address is required'),
+  full_address: z.string().min(3, 'Full address is required'),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
-  website: z.string().url().optional().or(z.literal('')),
+  website: z.string().optional().or(z.literal('')),
   email: z.string().email('Valid official contact email is required'),
   phone: z.string().optional(),
-  logo: z.string().url().optional().or(z.literal('')),
+  logo: z.string().optional().or(z.literal('')),
 });
 
 export async function registerOrganizationAction(formData: unknown, userContext?: { id: string; role: UserRole; email: string }) {
@@ -34,7 +43,14 @@ export async function registerOrganizationAction(formData: unknown, userContext?
     };
   }
 
-  const parsed = orgRegistrationSchema.safeParse(formData);
+  const raw = formData as Record<string, unknown>;
+  const sanitized = {
+    ...raw,
+    website: typeof raw.website === 'string' ? normalizeUrl(raw.website) || '' : '',
+    logo: typeof raw.logo === 'string' ? normalizeUrl(raw.logo) || '' : '',
+  };
+
+  const parsed = orgRegistrationSchema.safeParse(sanitized);
   if (!parsed.success) {
     return {
       success: false,
@@ -43,7 +59,17 @@ export async function registerOrganizationAction(formData: unknown, userContext?
   }
 
   const data = parsed.data;
-  const slug = `demo-${data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${Date.now().toString().slice(-4)}`;
+  const slug = `org-${data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${Date.now().toString().slice(-4)}`;
+
+  // Dynamic Worldwide City/Country resolution
+  let resolvedCityId = data.city_id;
+  let resolvedCountryId = data.country_id;
+
+  if (data.city_id && (data.city_id.startsWith('custom:') || !data.city_id.startsWith('city-'))) {
+    const rawCityName = data.city_id.replace(/^custom:/, '');
+    const cityObj = await db.cities.findOrCreateByName(rawCityName, resolvedCountryId, data.latitude, data.longitude);
+    resolvedCityId = cityObj.id;
+  }
 
   const newOrg = await db.organizations.create({
     name: data.name,
@@ -52,8 +78,8 @@ export async function registerOrganizationAction(formData: unknown, userContext?
     description: data.description,
     description_ar: data.description_ar,
     organization_type: data.organization_type,
-    country_id: data.country_id,
-    city_id: data.city_id,
+    country_id: resolvedCountryId,
+    city_id: resolvedCityId,
     full_address: data.full_address,
     latitude: data.latitude,
     longitude: data.longitude,
