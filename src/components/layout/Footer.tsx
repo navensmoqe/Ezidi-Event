@@ -83,16 +83,16 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/organization/dashboard" className="hover:text-amber-300 transition-colors flex items-center gap-1.5">
+                <a href="/organization/dashboard" className="hover:text-amber-300 transition-colors flex items-center gap-1.5">
                   <Lock className="w-3.5 h-3.5 text-slate-500" />
                   <span>{t('orgPortal')}</span>
-                </Link>
+                </a>
               </li>
               <li>
-                <Link href="/admin" className="hover:text-amber-300 transition-colors flex items-center gap-1.5">
+                <a href="/admin" className="hover:text-amber-300 transition-colors flex items-center gap-1.5">
                   <Lock className="w-3.5 h-3.5 text-amber-500" />
                   <span>{t('adminPortal')}</span>
-                </Link>
+                </a>
               </li>
             </ul>
           </div>
