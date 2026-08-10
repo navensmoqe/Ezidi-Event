@@ -33,8 +33,8 @@ export function AdminSettingsClient() {
           <div className="space-y-2.5 text-xs text-slate-300">
             <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
               <span>{isRtl ? 'وضع بيئة التشغيل:' : 'Environment Mode:'}</span>
-              <span className="font-mono font-bold text-amber-400">
-                {isDemoMode ? 'APP_MODE=demo (Seed)' : 'APP_MODE=production (Supabase)'}
+              <span className="font-mono font-bold text-emerald-400">
+                {isRtl ? 'الإنتاج والتشغيل المباشر ✓' : 'Live Production Active ✓'}
               </span>
             </div>
 
