@@ -38,7 +38,7 @@ export function SmartLocationManager({
     country: initialLocation?.country || 'العراق (Iraq)',
     country_code: initialLocation?.country_code || 'IQ',
     city: initialLocation?.city || 'لالش (Lalish)',
-    full_address: initialLocation?.full_address || 'Lalish Temple, Nineveh Governorate, Iraq',
+    full_address: initialLocation?.full_address || 'معبد لالش النوراني، قضاء الشيخان، محافظة نينوى، العراق',
     latitude: initialLocation?.latitude || 36.7712,
     longitude: initialLocation?.longitude || 43.2982,
   });
@@ -56,9 +56,11 @@ export function SmartLocationManager({
 
   // Notify parent on change
   const updateLocation = (newData: Partial<LocationData>) => {
-    const updated = { ...location, ...newData };
-    setLocation(updated);
-    onChange(updated);
+    setLocation((prev) => {
+      const updated = { ...prev, ...newData };
+      onChange(updated);
+      return updated;
+    });
   };
 
   // Close suggestions on outside click
@@ -72,29 +74,19 @@ export function SmartLocationManager({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Reverse geocoding from lat/lng -> Extracts country, city, and exact address
+  // Reverse geocoding via our server-side API (zero CORS, ultra reliable)
   const reverseGeocode = async (lat: number, lon: number) => {
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1`,
-        { headers: { 'Accept-Language': isRtl ? 'ar,en' : 'en,ar' } }
+        `/api/geocode/reverse?lat=${lat}&lon=${lon}&lang=${isRtl ? 'ar' : 'en'}`
       );
       if (res.ok) {
         const data = await res.json();
-        if (data && data.address) {
-          const addr = data.address;
-          const country = addr.country || '';
-          const countryCode = (addr.country_code || '').toUpperCase();
-          const city =
-            addr.city ||
-            addr.town ||
-            addr.village ||
-            addr.municipality ||
-            addr.county ||
-            addr.state_district ||
-            addr.state ||
-            '';
-          const fullAddress = data.display_name || `${city}, ${country}`;
+        if (data) {
+          const country = data.country || '';
+          const countryCode = data.country_code || '';
+          const city = data.city || '';
+          const fullAddress = data.display_name || data.address || `${city}, ${country}`;
 
           updateLocation({
             country: country || location.country,
@@ -112,7 +104,7 @@ export function SmartLocationManager({
     }
   };
 
-  // Initialize Map
+  // Initialize Leaflet Map
   useEffect(() => {
     if (!mapContainerRef.current) return;
     let isMounted = true;
@@ -195,7 +187,7 @@ export function SmartLocationManager({
     };
   }, []);
 
-  // Sync map center if coordinates change externally
+  // Sync map center
   const panToCoords = (lat: number, lon: number, zoom = 14) => {
     if (mapInstanceRef.current && markerRef.current) {
       mapInstanceRef.current.setView([lat, lon], zoom);
@@ -203,9 +195,10 @@ export function SmartLocationManager({
     }
   };
 
-  // Live Debounced Search Query for ANY location in the world
+  // Live Server-Side Search Query (No CORS, instant response even on 1 character like "سنج" or "س")
   useEffect(() => {
-    if (!searchQuery.trim() || searchQuery.trim().length < 2) {
+    const trimmed = searchQuery.trim();
+    if (!trimmed || trimmed.length < 1) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
@@ -215,47 +208,35 @@ export function SmartLocationManager({
       setIsSearching(true);
       try {
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=8&q=${encodeURIComponent(
-            searchQuery.trim()
-          )}`,
-          { headers: { 'Accept-Language': isRtl ? 'ar,en,ku,de,fr' : 'en,ar,ku,de,fr' } }
+          `/api/geocode/search?q=${encodeURIComponent(trimmed)}&lang=${isRtl ? 'ar' : 'en'}`
         );
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data)) {
-            setSuggestions(data);
-            setShowSuggestions(data.length > 0);
+          if (data && Array.isArray(data.results)) {
+            setSuggestions(data.results);
+            setShowSuggestions(data.results.length > 0);
           }
         }
       } catch (err) {
-        console.error('Search error', err);
+        console.error('Search error:', err);
       } finally {
         setIsSearching(false);
       }
-    }, 280);
+    }, 200);
 
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [searchQuery, isRtl]);
 
   // When user selects a suggestion
   const handleSelectSuggestion = (item: any) => {
-    const lat = parseFloat(item.lat);
-    const lon = parseFloat(item.lon);
-    const addr = item.address || {};
-    const country = addr.country || '';
-    const countryCode = (addr.country_code || '').toUpperCase();
-    const city =
-      addr.city ||
-      addr.town ||
-      addr.village ||
-      addr.municipality ||
-      addr.county ||
-      addr.state_district ||
-      item.name ||
-      '';
+    const lat = item.lat;
+    const lon = item.lon;
+    const country = item.country || '';
+    const countryCode = item.country_code || '';
+    const city = item.city || item.name || '';
     const fullAddress = item.display_name || `${city}, ${country}`;
 
-    setSearchQuery(item.display_name);
+    setSearchQuery(item.name || city);
     setShowSuggestions(false);
 
     updateLocation({
@@ -326,8 +307,8 @@ export function SmartLocationManager({
             }}
             placeholder={
               isRtl
-                ? 'اكتب اسم أي مكان بالعالم (مثل: لالش، هانوفر، دهوك، شنكال، برلين، باريس، بغداد، ستوكهولم)...'
-                : 'Type any location (e.g. Lalish, Hannover, Duhok, Sinjar, Berlin, Paris, Stockholm)...'
+                ? 'اكتب اسم أي مكان بالعالم (مثل: سنجار، شنكال، لالش، هانوفر، دهوك، برلين، باريس، بغداد)...'
+                : 'Type any location (e.g. Sinjar, Shingal, Lalish, Hannover, Duhok, Berlin, Paris)...'
             }
             className={`w-full py-3 rounded-2xl bg-slate-900 border-2 border-amber-500/70 text-white text-sm focus:outline-none focus:ring-4 focus:ring-amber-500/20 shadow-xl ${
               isRtl ? 'pr-11 pl-4' : 'pl-11 pr-4'
@@ -335,7 +316,7 @@ export function SmartLocationManager({
           />
         </div>
 
-        {/* Live Suggestions Dropdown */}
+        {/* Live Suggestions Dropdown (Appears instantly as you type) */}
         {showSuggestions && suggestions.length > 0 && (
           <div className="absolute z-50 left-0 right-0 mt-1 bg-slate-900/98 backdrop-blur-xl border-2 border-amber-500 rounded-2xl shadow-2xl overflow-hidden max-h-80 overflow-y-auto divide-y divide-slate-800 animate-in fade-in zoom-in-95">
             <div className="p-2.5 bg-slate-950 text-xs font-bold text-amber-400 flex items-center justify-between border-b border-slate-800">
@@ -346,44 +327,32 @@ export function SmartLocationManager({
               <span className="text-[10px] text-slate-400 font-normal">Google Maps / OpenStreetMap</span>
             </div>
 
-            {suggestions.map((item, idx) => {
-              const addr = item.address || {};
-              const cName =
-                addr.city ||
-                addr.town ||
-                addr.village ||
-                addr.municipality ||
-                addr.county ||
-                item.name;
-              const country = addr.country || '';
-
-              return (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleSelectSuggestion(item)}
-                  className="w-full p-3 text-right hover:bg-amber-500/15 transition-colors flex items-start gap-3 text-xs cursor-pointer group"
-                >
-                  <MapPin className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
-                  <div className="flex-1 overflow-hidden space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-white text-sm group-hover:text-amber-300">
-                        {cName}
+            {suggestions.map((item, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleSelectSuggestion(item)}
+                className="w-full p-3 text-right hover:bg-amber-500/15 transition-colors flex items-start gap-3 text-xs cursor-pointer group"
+              >
+                <MapPin className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
+                <div className="flex-1 overflow-hidden space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-white text-sm group-hover:text-amber-300">
+                      {item.name || item.city}
+                    </span>
+                    {item.country && (
+                      <span className="text-slate-400 text-xs font-semibold">
+                        ({item.country})
                       </span>
-                      {country && (
-                        <span className="text-slate-400 text-xs font-semibold">
-                          ({country})
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-slate-400 truncate">{item.display_name}</p>
+                    )}
                   </div>
-                  <span className="text-[11px] text-amber-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity self-center shrink-0">
-                    {isRtl ? 'تعبئة تلقائية ✓' : 'Auto-fill ✓'}
-                  </span>
-                </button>
-              );
-            })}
+                  <p className="text-[11px] text-slate-400 truncate">{item.display_name}</p>
+                </div>
+                <span className="text-[11px] text-amber-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity self-center shrink-0">
+                  {isRtl ? 'تعبئة تلقائية ✓' : 'Auto-fill ✓'}
+                </span>
+              </button>
+            ))}
           </div>
         )}
       </div>
@@ -438,7 +407,7 @@ export function SmartLocationManager({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Country (Fully flexible text input for ANY country worldwide) */}
+          {/* Country */}
           <div>
             <label className="block text-xs font-bold text-slate-200 mb-1.5">
               {isRtl ? 'الدولة (أي دولة بالعالم) *' : 'Country (Any worldwide country) *'}
@@ -458,7 +427,7 @@ export function SmartLocationManager({
             </div>
           </div>
 
-          {/* City / Area (Fully flexible text input for ANY city worldwide) */}
+          {/* City / Area */}
           <div>
             <label className="block text-xs font-bold text-slate-200 mb-1.5">
               {isRtl ? 'المدينة / المنطقة / البلدة *' : 'City / Region / Town *'}
@@ -470,7 +439,7 @@ export function SmartLocationManager({
                 required
                 value={location.city}
                 onChange={(e) => updateLocation({ city: e.target.value })}
-                placeholder={isRtl ? 'لالش، شنكال، هانوفر، دهوك، برلين، باريس...' : 'e.g. Lalish, Sinjar, Hanover, Duhok...'}
+                placeholder={isRtl ? 'لالش، شنكال، سنجار، هانوفر، دهوك، برلين...' : 'e.g. Lalish, Sinjar, Hanover, Duhok...'}
                 className={`w-full py-2.5 rounded-xl bg-slate-950 border border-amber-500/80 text-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
                   isRtl ? 'pr-10 pl-4' : 'pl-10 pr-4'
                 }`}
