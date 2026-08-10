@@ -20,7 +20,7 @@ import {
   ShieldCheck,
   LogOut,
   Globe,
-  Languages,
+  PanelLeftClose,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -28,6 +28,7 @@ interface SidebarProps {
   pendingChangesCount: number;
   pendingOrgsCount: number;
   openReportsCount: number;
+  onClose?: () => void;
 }
 
 export function AdminSidebarClient({
@@ -35,9 +36,15 @@ export function AdminSidebarClient({
   pendingChangesCount,
   pendingOrgsCount,
   openReportsCount,
+  onClose,
 }: SidebarProps) {
   const pathname = usePathname();
-  const { lang, setLang, t } = useAdminLanguage();
+  const { lang, setLang, t, isRtl } = useAdminLanguage();
+
+  // If on login page -> DO NOT RENDER SIDEBAR AT ALL
+  if (pathname === '/admin/login' || pathname.startsWith('/admin/login')) {
+    return null;
+  }
 
   const navItems = [
     { href: '/admin', labelKey: 'overview', icon: LayoutDashboard },
@@ -55,22 +62,34 @@ export function AdminSidebarClient({
   ];
 
   return (
-    <aside className="w-full md:w-72 bg-slate-950 border-r border-slate-800/80 p-5 flex flex-col justify-between shrink-0">
+    <aside className="w-full md:w-72 bg-slate-950 border-r border-slate-800/80 p-5 flex flex-col justify-between shrink-0 min-h-screen">
       <div className="space-y-5">
-        {/* Logo */}
-        <Link href="/admin" className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center text-slate-950 font-black text-base shadow-md">
-            👑
-          </div>
-          <div>
-            <span className="text-sm font-extrabold text-white block tracking-wide">
-              {t('adminSaas')}
-            </span>
-            <span className="text-[10px] text-amber-400 font-medium tracking-wider">
-              {t('platformName')}
-            </span>
-          </div>
-        </Link>
+        {/* Logo and Hide Sidebar Button */}
+        <div className="flex items-center justify-between">
+          <Link href="/admin" className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center text-slate-950 font-black text-base shadow-md">
+              👑
+            </div>
+            <div>
+              <span className="text-sm font-extrabold text-white block tracking-wide">
+                {t('adminSaas')}
+              </span>
+              <span className="text-[10px] text-amber-400 font-medium tracking-wider">
+                {t('platformName')}
+              </span>
+            </div>
+          </Link>
+
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-900 transition-colors"
+              title={isRtl ? 'إخفاء القائمة الجانبية' : 'Hide Sidebar'}
+            >
+              <PanelLeftClose className="w-4 h-4 text-slate-400 hover:text-amber-400" />
+            </button>
+          )}
+        </div>
 
         {/* Language Switcher Bar */}
         <div className="p-1 rounded-xl bg-slate-900 border border-slate-800 flex items-center gap-1">
@@ -147,7 +166,7 @@ export function AdminSidebarClient({
           href="/ar"
           className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-white transition-colors"
         >
-          <Globe className="w-4 h-4" />
+          <Globe className="w-4 h-4 text-amber-400" />
           <span>{t('publicWebsite')}</span>
         </a>
         <a

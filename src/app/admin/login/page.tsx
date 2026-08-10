@@ -1,19 +1,30 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { loginAction } from '@/lib/actions/auth';
-import { ShieldCheck, Lock, Mail, KeyRound, AlertCircle, ArrowRight } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, KeyRound, AlertCircle, ArrowRight, Eye, EyeOff, Globe } from 'lucide-react';
 import Link from 'next/link';
 
 export default function AdminLoginPage() {
   const router = useRouter();
+  const [lang, setLang] = useState<'ar' | 'en'>('ar');
   const [email, setEmail] = useState('admin@ezidievents.org');
   const [password, setPassword] = useState('admin123456');
+  const [showPassword, setShowPassword] = useState(false);
   const [totpCode, setTotpCode] = useState('');
   const [requires2FA, setRequires2FA] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('ezidi_admin_lang') as 'ar' | 'en' | null;
+    if (saved && (saved === 'ar' || saved === 'en')) {
+      setLang(saved);
+    }
+  }, []);
+
+  const isRtl = lang === 'ar';
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,7 +40,7 @@ export default function AdminLoginPage() {
 
     setLoading(false);
     if (!res.success) {
-      setError(res.error || 'Authentication failed.');
+      setError(res.error || (isRtl ? 'فشل تسجيل الدخول. يرجى التحقق من البيانات.' : 'Authentication failed.'));
     } else if (res.requires2FA) {
       setRequires2FA(true);
     } else {
@@ -38,15 +49,39 @@ export default function AdminLoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#070A10] text-white flex items-center justify-center p-4">
+    <div className={`min-h-screen bg-[#070A10] text-white flex items-center justify-center p-4 w-full ${isRtl ? 'rtl' : 'ltr'}`} dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="w-full max-w-md glass-panel rounded-3xl p-8 sm:p-10 border border-slate-800 shadow-2xl space-y-6">
-        <div className="text-center space-y-2">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center mx-auto">
-            <ShieldCheck className="w-6 h-6" />
+        {/* Language Switcher */}
+        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+          <div className="flex items-center gap-2 text-amber-400 font-bold text-xs">
+            <ShieldCheck className="w-4 h-4" />
+            <span>{isRtl ? 'لوحة الإدارة الآمنة' : 'Admin Security Portal'}</span>
           </div>
-          <h1 className="text-2xl font-black tracking-tight">Admin SaaS Dashboard</h1>
+
+          <button
+            type="button"
+            onClick={() => {
+              const next = lang === 'ar' ? 'en' : 'ar';
+              setLang(next);
+              localStorage.setItem('ezidi_admin_lang', next);
+            }}
+            className="px-2.5 py-1 rounded-xl bg-slate-900 border border-slate-700 text-xs font-bold text-slate-300 hover:text-white"
+          >
+            {lang === 'ar' ? 'English (EN)' : 'العربية (AR)'}
+          </button>
+        </div>
+
+        <div className="text-center space-y-2">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center mx-auto shadow-lg shadow-amber-500/10">
+            👑
+          </div>
+          <h1 className="text-2xl font-black tracking-tight text-white">
+            {isRtl ? 'تسجيل دخول الإدارة العليا' : 'Admin SaaS Dashboard'}
+          </h1>
           <p className="text-xs text-slate-400">
-            Secure administrative access for moderation, verification, and oversight.
+            {isRtl
+              ? 'الوصول الإداري الآمن لإدارة الفعاليات والمنظمات والتوثيق الأمني.'
+              : 'Secure administrative access for moderation, verification, and oversight.'}
           </p>
         </div>
 
@@ -58,60 +93,74 @@ export default function AdminLoginPage() {
         )}
 
         <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Administrator Email
-            </label>
-            <div className="relative">
-              <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="email"
-                required
-                disabled={requires2FA}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 disabled:opacity-50"
-              />
-            </div>
-          </div>
-
           {!requires2FA ? (
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-                />
+            <>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  {isRtl ? 'البريد الإلكتروني للإدارة' : 'Administrator Email'}
+                </label>
+                <div className="relative">
+                  <Mail className={`w-4 h-4 text-slate-500 absolute top-1/2 -translate-y-1/2 ${isRtl ? 'right-3.5' : 'left-3.5'}`} />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className={`w-full py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 font-mono ${
+                      isRtl ? 'pr-10 pl-4' : 'pl-10 pr-4'
+                    }`}
+                  />
+                </div>
               </div>
-            </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  {isRtl ? 'كلمة المرور' : 'Password'}
+                </label>
+                <div className="relative">
+                  <Lock className={`w-4 h-4 text-slate-500 absolute top-1/2 -translate-y-1/2 ${isRtl ? 'right-3.5' : 'left-3.5'}`} />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className={`w-full py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 font-mono ${
+                      isRtl ? 'pr-10 pl-10' : 'pl-10 pr-10'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className={`absolute top-1/2 -translate-y-1/2 text-slate-400 hover:text-white ${isRtl ? 'left-3.5' : 'right-3.5'}`}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            </>
           ) : (
-            <div className="space-y-2 animate-in fade-in zoom-in-95">
-              <div className="p-3 rounded-xl bg-amber-950/60 border border-amber-500/40 text-amber-200 text-xs">
-                Enter the 6-digit TOTP code from your authenticator app (or demo code: <code className="font-mono text-white">123456</code>).
-              </div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                Two-Factor TOTP Code
+            <div className="space-y-2 animate-in fade-in">
+              <label className="block text-xs font-bold text-amber-300 mb-1">
+                {isRtl ? 'رمز التحقق بخطوتين (2FA TOTP Code)' : '2FA Authenticator Code'}
               </label>
               <div className="relative">
-                <KeyRound className="w-4 h-4 text-amber-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <KeyRound className={`w-4 h-4 text-amber-400 absolute top-1/2 -translate-y-1/2 ${isRtl ? 'right-3.5' : 'left-3.5'}`} />
                 <input
                   type="text"
                   required
                   autoFocus
+                  placeholder="123456"
                   maxLength={6}
                   value={totpCode}
                   onChange={(e) => setTotpCode(e.target.value)}
-                  placeholder="123456"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900 border border-amber-500/60 text-white text-center font-mono text-lg tracking-widest focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  className={`w-full py-3 rounded-xl bg-slate-900 border border-amber-500 text-amber-300 text-center font-mono text-lg tracking-widest font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                    isRtl ? 'pr-10 pl-4' : 'pl-10 pr-4'
+                  }`}
                 />
               </div>
+              <p className="text-[11px] text-slate-400">
+                {isRtl ? 'أدخل الرمز المكون من 6 أرقام من تطبيق التحقق (Authenticator).' : 'Enter the 6-digit code from your authenticator app.'}
+              </p>
             </div>
           )}
 
@@ -119,21 +168,19 @@ export default function AdminLoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2"
+              className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/20 transition-all flex items-center justify-center gap-2 hover:scale-[1.01]"
             >
-              <span>{loading ? 'Authenticating...' : requires2FA ? 'Verify 2FA Code' : 'Sign In to Admin Panel'}</span>
-              <ArrowRight className="w-4 h-4" />
+              <span>{loading ? (isRtl ? 'جاري التحقق...' : 'Authenticating...') : (isRtl ? 'تسجيل الدخول إلى لوحة الإدارة' : 'Sign In to Admin Panel')}</span>
+              <ArrowRight className={`w-4 h-4 ${isRtl ? 'rotate-180' : ''}`} />
             </button>
           </div>
         </form>
 
         <div className="pt-4 border-t border-slate-800 text-center space-y-2 text-xs text-slate-400">
-          <p>Demo Super Admin: <code className="text-amber-300">admin@ezidievents.org</code></p>
-          <div>
-            <Link href="/en" className="text-slate-400 hover:text-white transition-colors">
-              ← Return to Public Website
-            </Link>
-          </div>
+          <Link href="/ar" className="hover:text-white transition-colors flex items-center justify-center gap-1">
+            <Globe className="w-3.5 h-3.5" />
+            <span>{isRtl ? 'العودة للموقع العام ←' : 'Return to Public Website ←'}</span>
+          </Link>
         </div>
       </div>
     </div>

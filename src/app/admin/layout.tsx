@@ -2,7 +2,7 @@ import React from 'react';
 import { db } from '@/lib/db';
 import '@/app/globals.css';
 import { AdminLanguageProvider } from '@/components/admin/AdminLanguageProvider';
-import { AdminSidebarClient } from '@/components/admin/AdminSidebarClient';
+import { AdminLayoutShell } from '@/components/admin/AdminLayoutShell';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -24,23 +24,16 @@ export default async function AdminLayout({
     <html lang="ar" dir="rtl" className="dark">
       <body className="min-h-screen bg-[#070A10] text-slate-100 antialiased selection:bg-amber-500 selection:text-slate-950">
         <AdminLanguageProvider>
-          <div className="min-h-screen bg-[#070A10] text-white flex flex-col md:flex-row">
-            {/* Multilingual Admin Sidebar with Arabic RTL toggle */}
-            <AdminSidebarClient
-              pendingSubmissionsCount={pendingSubmissions.length}
-              pendingChangesCount={pendingChanges.length}
-              pendingOrgsCount={pendingOrgs.length}
-              openReportsCount={openReports.length}
-            />
-
-            {/* Main Admin Area */}
-            <main className="flex-1 p-6 sm:p-10 max-w-7xl overflow-y-auto">
-              {children}
-            </main>
-          </div>
+          <AdminLayoutShell
+            pendingSubmissionsCount={pendingSubmissions.length}
+            pendingChangesCount={pendingChanges.length}
+            pendingOrgsCount={pendingOrgs.length}
+            openReportsCount={openReports.length}
+          >
+            {children}
+          </AdminLayoutShell>
         </AdminLanguageProvider>
       </body>
     </html>
   );
 }
-
