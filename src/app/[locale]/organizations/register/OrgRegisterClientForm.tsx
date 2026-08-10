@@ -4,8 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from '@/i18n/routing';
 import { Country, City } from '@/types/database';
 import { registerOrganizationAction } from '@/lib/actions/organizations';
-import { LocationPicker } from '@/components/maps/LocationPicker';
-import { WorldwideCityAutocomplete, PlaceSuggestion } from '@/components/maps/WorldwideCityAutocomplete';
+import { SmartLocationManager, LocationData } from '@/components/maps/SmartLocationManager';
 import {
   Building2,
   FileText,
@@ -41,10 +40,9 @@ export function OrgRegisterClientForm({ countries, cities, locale = 'ar' }: OrgR
     description: '',
     description_ar: '',
     organization_type: 'Human Rights NGO',
-    country_id: countries[0]?.id || 'c-iq',
-    city_id: cities[0]?.id || 'city-lalish',
-    cityNameDisplay: 'Lalish',
-    full_address: 'Lalish, Nineveh Governorate, Iraq',
+    country_id: 'العراق (Iraq)',
+    city_id: 'لالش (Lalish)',
+    full_address: 'Lalish Temple, Nineveh Governorate, Iraq',
     latitude: 36.7712,
     longitude: 43.2982,
     website: '',
@@ -58,56 +56,15 @@ export function OrgRegisterClientForm({ countries, cities, locale = 'ar' }: OrgR
   const [error, setError] = useState<string | null>(null);
   const [successOrg, setSuccessOrg] = useState<any>(null);
 
-  // When a user selects a place from Worldwide City Autocomplete
-  const handleSelectWorldwidePlace = (place: PlaceSuggestion) => {
-    // Find matching country if available
-    let matchedCountryId = formData.country_id;
-    if (place.countryCode) {
-      const c = countries.find(
-        (cnt) => cnt.code.toLowerCase() === place.countryCode.toLowerCase()
-      );
-      if (c) matchedCountryId = c.id;
-    }
-
+  const handleLocationChange = (loc: LocationData) => {
     setFormData((prev) => ({
       ...prev,
-      country_id: matchedCountryId,
-      city_id: `custom:${place.cityName}`,
-      cityNameDisplay: place.cityName,
-      full_address: place.displayName || prev.full_address,
-      latitude: place.lat,
-      longitude: place.lon,
+      country_id: loc.country || prev.country_id,
+      city_id: loc.city || prev.city_id,
+      full_address: loc.full_address || prev.full_address,
+      latitude: loc.latitude,
+      longitude: loc.longitude,
     }));
-  };
-
-  const handleLocationSelect = (lat: number, lon: number, address?: string, details?: any) => {
-    setFormData((prev) => {
-      let matchedCountryId = prev.country_id;
-      let matchedCityId = prev.city_id;
-      let cityName = prev.cityNameDisplay;
-
-      if (details?.countryCode) {
-        const c = countries.find(
-          (cnt) => cnt.code.toLowerCase() === details.countryCode.toLowerCase()
-        );
-        if (c) matchedCountryId = c.id;
-      }
-
-      if (details?.cityName) {
-        cityName = details.cityName;
-        matchedCityId = `custom:${details.cityName}`;
-      }
-
-      return {
-        ...prev,
-        latitude: lat,
-        longitude: lon,
-        full_address: address || prev.full_address,
-        country_id: matchedCountryId,
-        city_id: matchedCityId,
-        cityNameDisplay: cityName,
-      };
-    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -117,7 +74,8 @@ export function OrgRegisterClientForm({ countries, cities, locale = 'ar' }: OrgR
 
     const submissionData = {
       ...formData,
-      city_id: formData.city_id,
+      country_id: formData.country_id || 'Global',
+      city_id: formData.city_id || 'Global',
     };
 
     const res = await registerOrganizationAction(submissionData);
@@ -289,82 +247,24 @@ export function OrgRegisterClientForm({ countries, cities, locale = 'ar' }: OrgR
         </div>
       </div>
 
-      {/* 2. Live Worldwide Google Maps Auto-Complete & Location */}
+      {/* 2. Smart Worldwide Location & Google Maps Auto-Fill Manager */}
       <div className="space-y-4">
         <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
           <MapPin className="w-5 h-5 text-amber-400" />
-          <span>{isAr ? '2. المقر والموقع الجغرافي (تلقائي لجميع مدن العالم)' : '2. Headquarters & Global Location'}</span>
+          <span>{isAr ? '2. المقر والموقع الجغرافي الدقيق (تعبئة تلقائية لجميع دول ومدن العالم)' : '2. Headquarters & Global Location'}</span>
         </h3>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="sm:col-span-2 space-y-1.5">
-            <label className="block text-xs font-bold text-amber-300">
-              {isAr
-                ? '📍 البحث التلقائي عن أي مدينة أو منطقة بالعالم (اكتب بالعربي أو الإنجليزي) *'
-                : '📍 Automatic Worldwide City / Area Search (Arabic or English) *'}
-            </label>
-            <WorldwideCityAutocomplete
-              countries={countries}
-              selectedCityName={formData.cityNameDisplay}
-              onSelectPlace={handleSelectWorldwidePlace}
-              isRtl={isAr}
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              {isAr ? 'الدولة (يتم تحديدها تلقائياً)' : 'Country (Auto-detected)'}
-            </label>
-            <select
-              value={formData.country_id}
-              onChange={(e) => setFormData({ ...formData, country_id: e.target.value })}
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            >
-              {countries.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {isAr ? (c.name_ar || c.name_en) : c.name_en}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              {isAr ? 'اسم المدينة المحددة' : 'Selected City'}
-            </label>
-            <input
-              type="text"
-              readOnly
-              value={formData.cityNameDisplay}
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900/60 border border-slate-700 text-amber-300 font-bold text-sm"
-            />
-          </div>
-
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              {isAr ? 'العنوان والمقر الكامل *' : 'Complete Official Address *'}
-            </label>
-            <input
-              type="text"
-              required
-              value={formData.full_address}
-              onChange={(e) => setFormData({ ...formData, full_address: e.target.value })}
-              placeholder={isAr ? 'مثال: شارع المحطة 12، هانوفر، ألمانيا' : 'e.g. Station Street 12, Hanover, Germany'}
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            />
-          </div>
-
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              {isAr ? 'تحديد وتعديل الموقع على خريطة العالم التفاعلية' : 'Interactive Map Pin'}
-            </label>
-            <LocationPicker
-              initialLatitude={formData.latitude}
-              initialLongitude={formData.longitude}
-              onLocationSelect={handleLocationSelect}
-            />
-          </div>
-        </div>
+        <SmartLocationManager
+          initialLocation={{
+            country: formData.country_id,
+            city: formData.city_id,
+            full_address: formData.full_address,
+            latitude: formData.latitude,
+            longitude: formData.longitude,
+          }}
+          onChange={handleLocationChange}
+          isRtl={isAr}
+        />
       </div>
 
       {/* 3. Official Contact Info & Password */}

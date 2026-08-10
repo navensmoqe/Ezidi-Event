@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useOrgLanguage } from '@/components/organization/OrgLanguageProvider';
 import { EventCategory, Country, City, Organization } from '@/types/database';
 import { POPULAR_TIMEZONES } from '@/lib/utils/timezone';
-import { LocationPicker } from '@/components/maps/LocationPicker';
-import { WorldwideCityAutocomplete, PlaceSuggestion } from '@/components/maps/WorldwideCityAutocomplete';
+import { SmartLocationManager, LocationData } from '@/components/maps/SmartLocationManager';
 import { createEventAction } from '@/lib/actions/events';
 import {
   Calendar,
@@ -47,12 +46,11 @@ export function OrgAddEventClientForm({
     start_time: '16:00',
     end_time: '19:00',
     timezone: 'Europe/Berlin',
-    country_id: countries[0]?.id || '',
-    city_id: cities[0]?.id || '',
-    cityNameDisplay: '',
-    full_address: organization.full_address || 'Berlin, Germany',
-    latitude: organization.latitude || 52.5163,
-    longitude: organization.longitude || 13.3777,
+    country_id: 'ألمانيا (Germany)',
+    city_id: 'هانوفر (Hannover)',
+    full_address: organization.full_address || 'Hanover, Lower Saxony, Germany',
+    latitude: organization.latitude || 52.3759,
+    longitude: organization.longitude || 9.732,
     organization_id: organization.id,
     organizer_name: organization.name,
     poster_url: '',
@@ -67,54 +65,15 @@ export function OrgAddEventClientForm({
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
   const [resultEvent, setResultEvent] = useState<any>(null);
 
-  const handleSelectWorldwidePlace = (place: PlaceSuggestion) => {
-    let matchedCountryId = formData.country_id;
-    if (place.countryCode) {
-      const c = countries.find(
-        (cnt) => cnt.code.toLowerCase() === place.countryCode.toLowerCase()
-      );
-      if (c) matchedCountryId = c.id;
-    }
-
+  const handleLocationChange = (loc: LocationData) => {
     setFormData((prev) => ({
       ...prev,
-      country_id: matchedCountryId,
-      city_id: `custom:${place.cityName}`,
-      cityNameDisplay: place.cityName,
-      full_address: place.displayName || prev.full_address,
-      latitude: place.lat,
-      longitude: place.lon,
+      country_id: loc.country || prev.country_id,
+      city_id: loc.city || prev.city_id,
+      full_address: loc.full_address || prev.full_address,
+      latitude: loc.latitude,
+      longitude: loc.longitude,
     }));
-  };
-
-  const handleLocationSelect = (lat: number, lon: number, address?: string, details?: any) => {
-    setFormData((prev) => {
-      let matchedCountryId = prev.country_id;
-      let matchedCityId = prev.city_id;
-      let cityName = prev.cityNameDisplay;
-
-      if (details?.countryCode) {
-        const c = countries.find(
-          (cnt) => cnt.code.toLowerCase() === details.countryCode.toLowerCase()
-        );
-        if (c) matchedCountryId = c.id;
-      }
-
-      if (details?.cityName) {
-        cityName = details.cityName;
-        matchedCityId = `custom:${details.cityName}`;
-      }
-
-      return {
-        ...prev,
-        latitude: lat,
-        longitude: lon,
-        full_address: address || prev.full_address,
-        country_id: matchedCountryId,
-        city_id: matchedCityId,
-        cityNameDisplay: cityName,
-      };
-    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -127,7 +86,8 @@ export function OrgAddEventClientForm({
       ...formData,
       organization_id: organization.id,
       organizer_name: organization.name,
-      city_id: formData.city_id || `custom:${formData.cityNameDisplay || 'Lalish'}`,
+      country_id: formData.country_id || 'Global',
+      city_id: formData.city_id || 'Global',
     };
 
     const res = await createEventAction(submissionData);
@@ -342,81 +302,24 @@ export function OrgAddEventClientForm({
         </div>
       </div>
 
-      {/* 3. Worldwide Google Maps Auto-Complete & Venue Location */}
+      {/* 3. Smart Location Manager */}
       <div className="space-y-4">
         <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
           <MapPin className="w-4 h-4 text-amber-400" />
-          <span>{isRtl ? '3. المكان والموقع الجغرافي (تلقائي لجميع مدن العالم)' : '3. Location & Global Venue'}</span>
+          <span>{isRtl ? '3. المكان والموقع الجغرافي الدقيق (تعبئة تلقائية لجميع دول ومدن العالم)' : '3. Location & Global Venue'}</span>
         </h3>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="sm:col-span-2 space-y-1.5">
-            <label className="block text-xs font-bold text-amber-300">
-              {isRtl
-                ? '📍 البحث التلقائي عن أي مدينة أو منطقة بالعالم (اكتب بالعربي أو الإنجليزي) *'
-                : '📍 Automatic Worldwide City / Area Search (Arabic or English) *'}
-            </label>
-            <WorldwideCityAutocomplete
-              countries={countries}
-              selectedCityName={formData.cityNameDisplay}
-              onSelectPlace={handleSelectWorldwidePlace}
-              isRtl={isRtl}
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              {isRtl ? 'الدولة (تتحدث تلقائياً)' : 'Country'}
-            </label>
-            <select
-              value={formData.country_id}
-              onChange={(e) => setFormData({ ...formData, country_id: e.target.value })}
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            >
-              {countries.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {isRtl ? (c.name_ar || c.name_en) : c.name_en}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              {isRtl ? 'المدينة المحددة' : 'Selected City'}
-            </label>
-            <input
-              type="text"
-              readOnly
-              value={formData.cityNameDisplay || 'Lalish'}
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900/60 border border-slate-700 text-amber-300 font-bold text-sm"
-            />
-          </div>
-
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              {isRtl ? 'العنوان الكامل ومكان التجمع *' : 'Full Address & Meeting Point *'}
-            </label>
-            <input
-              type="text"
-              required
-              value={formData.full_address}
-              onChange={(e) => setFormData({ ...formData, full_address: e.target.value })}
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            />
-          </div>
-
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              {isRtl ? 'تحديد الموقع على الخريطة التفاعلية' : 'Interactive Map Pin'}
-            </label>
-            <LocationPicker
-              initialLatitude={formData.latitude}
-              initialLongitude={formData.longitude}
-              onLocationSelect={handleLocationSelect}
-            />
-          </div>
-        </div>
+        <SmartLocationManager
+          initialLocation={{
+            country: formData.country_id,
+            city: formData.city_id,
+            full_address: formData.full_address,
+            latitude: formData.latitude,
+            longitude: formData.longitude,
+          }}
+          onChange={handleLocationChange}
+          isRtl={isRtl}
+        />
       </div>
 
       {/* 4. Media & Contact */}
