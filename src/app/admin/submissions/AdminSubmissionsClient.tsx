@@ -52,7 +52,7 @@ export function AdminSubmissionsClient({
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Live polling for both Events and Organizations
+  // Live polling for both Events and Organizations with zero-flicker non-destructive state
   const fetchLiveData = useCallback(async () => {
     setIsRefreshing(true);
     try {
@@ -61,8 +61,26 @@ export function AdminSubmissionsClient({
       if (evRes.ok) {
         const data = await evRes.json();
         if (data.success && Array.isArray(data.events)) {
-          const pending = data.events.filter((e: EventItem) => e.status === 'pending');
-          setEvents(pending);
+          setEvents((prev) => {
+            const map = new Map<string, EventItem>();
+            // Keep existing pending
+            prev.forEach((e) => {
+              if (e && e.id && e.status === 'pending') {
+                map.set(e.id, e);
+              }
+            });
+            // Merge server pending / remove verified
+            data.events.forEach((e: EventItem) => {
+              if (e && e.id) {
+                if (e.status === 'pending') {
+                  map.set(e.id, e);
+                } else if (e.status === 'published' || e.status === 'rejected') {
+                  map.delete(e.id);
+                }
+              }
+            });
+            return Array.from(map.values());
+          });
         }
       }
 
@@ -81,19 +99,36 @@ export function AdminSubmissionsClient({
             submittedOrgs = JSON.parse(localStorage.getItem('ezidi_submitted_orgs') || '[]');
           } catch {}
 
-          // Merge submitted from local if not yet in server list
-          const combinedOrgs = [...orgData.organizations];
-          submittedOrgs.forEach((locOrg) => {
-            if (!combinedOrgs.some((o) => o.id === locOrg.id || o.name === locOrg.name)) {
-              combinedOrgs.unshift(locOrg);
-            }
-          });
+          setOrgs((prev) => {
+            const map = new Map<string, Organization>();
 
-          const pendingOrgs = combinedOrgs.filter(
-            (o: Organization) =>
-              o.verification_status === 'pending' && !verifiedLocal.includes(o.id)
-          );
-          setOrgs(pendingOrgs);
+            // Keep all previously known pending orgs that are not verified
+            prev.forEach((o) => {
+              if (o && o.id && o.verification_status === 'pending' && !verifiedLocal.includes(o.id)) {
+                map.set(o.id, o);
+              }
+            });
+
+            // Merge from server
+            orgData.organizations.forEach((o: Organization) => {
+              if (o && o.id) {
+                if (o.verification_status === 'pending' && !verifiedLocal.includes(o.id)) {
+                  map.set(o.id, o);
+                } else if (o.verification_status === 'verified' || verifiedLocal.includes(o.id)) {
+                  map.delete(o.id);
+                }
+              }
+            });
+
+            // Merge from local submissions
+            submittedOrgs.forEach((locOrg) => {
+              if (locOrg && locOrg.id && !verifiedLocal.includes(locOrg.id)) {
+                map.set(locOrg.id, { ...locOrg, verification_status: 'pending' });
+              }
+            });
+
+            return Array.from(map.values());
+          });
         }
       }
     } catch {}
