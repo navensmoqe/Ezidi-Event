@@ -25,6 +25,7 @@ import {
 } from './mock-data';
 import { isProduction } from '@/lib/config/env';
 import { CloudSync } from './cloud-sync';
+export { CloudSync };
 
 // In-memory data store for development & demo mode
 class InMemoryDb {
@@ -57,6 +58,19 @@ export interface PublicEventFilters {
 export const db = {
   events: {
     async findPublicEvents(filters: PublicEventFilters = {}): Promise<EventItem[]> {
+      const cloudEvents = await CloudSync.getEvents();
+      const existingIds = new Set(memory.events.map((e) => e.id));
+      for (const ev of cloudEvents) {
+        if (!existingIds.has(ev.id)) {
+          memory.events.unshift(ev);
+        } else {
+          const idx = memory.events.findIndex((e) => e.id === ev.id);
+          if (idx !== -1) {
+            memory.events[idx] = { ...memory.events[idx], ...ev };
+          }
+        }
+      }
+
       let results = memory.events.filter(
         (e) =>
           (e.status === 'published' || e.status === 'cancelled' || e.status === 'postponed') &&
@@ -105,12 +119,28 @@ export const db = {
         );
       }
 
-      // Populate relations
+      // Populate relations with fallback for custom worldwide cities/countries
       results = results.map((e) => ({
         ...e,
         category: memory.categories.find((c) => c.id === e.category_id),
-        country: memory.countries.find((c) => c.id === e.country_id),
-        city: memory.cities.find((c) => c.id === e.city_id),
+        country: memory.countries.find((c) => c.id === e.country_id) || {
+          id: e.country_id,
+          name_en: e.country_id,
+          name_ar: e.country_id,
+          name_de: e.country_id,
+          name_fr: e.country_id,
+          code: 'GL',
+        },
+        city: memory.cities.find((c) => c.id === e.city_id) || {
+          id: e.city_id,
+          name_en: e.city_id,
+          name_ar: e.city_id,
+          name_de: e.city_id,
+          name_fr: e.city_id,
+          country_id: e.country_id,
+          latitude: e.latitude || 0,
+          longitude: e.longitude || 0,
+        },
         organization: e.organization_id
           ? memory.organizations.find((o) => o.id === e.organization_id)
           : undefined,

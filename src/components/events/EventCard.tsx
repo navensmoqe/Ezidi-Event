@@ -100,8 +100,13 @@ export function EventCard({ event, featured = false }: EventCardProps) {
           <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium mb-2">
             <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             <span className="truncate">
-              {event.city ? (locale === 'ar' ? event.city.name_ar : event.city.name_en) : ''}
-              {event.country ? `, ${locale === 'ar' ? event.country.name_ar : event.country.name_en}` : ''}
+              {event.city
+                ? (locale === 'ar' ? event.city.name_ar || event.city.name_en : event.city.name_en || event.city.name_ar)
+                : event.city_id || ''}
+              {event.country
+                ? `, ${locale === 'ar' ? event.country.name_ar || event.country.name_en : event.country.name_en || event.country.name_ar}`
+                : event.country_id ? `, ${event.country_id}` : ''}
+              {!event.city && !event.country && event.full_address ? event.full_address : ''}
             </span>
           </div>
 
