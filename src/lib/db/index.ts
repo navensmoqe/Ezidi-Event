@@ -41,7 +41,14 @@ class InMemoryDb {
   notifications: NotificationItem[] = [...INITIAL_NOTIFICATIONS];
 }
 
-const memory = new InMemoryDb();
+declare global {
+  var __ezidi_memory_db__: InMemoryDb | undefined;
+}
+
+const memory = globalThis.__ezidi_memory_db__ ?? new InMemoryDb();
+if (!globalThis.__ezidi_memory_db__) {
+  globalThis.__ezidi_memory_db__ = memory;
+}
 
 export interface PublicEventFilters {
   category?: string;
@@ -350,10 +357,23 @@ export const db = {
     },
 
     async findBySlug(slug: string): Promise<Organization | null> {
-      let org = memory.organizations.find((o) => o.slug === slug);
+      const decoded = decodeURIComponent(slug).toLowerCase().trim();
+      let org = memory.organizations.find(
+        (o) =>
+          o.slug.toLowerCase() === decoded ||
+          o.id.toLowerCase() === decoded ||
+          o.slug === slug ||
+          o.id === slug
+      );
       if (!org) {
         const cloudOrgs = await CloudSync.getOrganizations();
-        org = cloudOrgs.find((o) => o.slug === slug);
+        org = cloudOrgs.find(
+          (o) =>
+            o.slug.toLowerCase() === decoded ||
+            o.id.toLowerCase() === decoded ||
+            o.slug === slug ||
+            o.id === slug
+        );
         if (org && !memory.organizations.some((o) => o.id === org?.id)) {
           memory.organizations.unshift(org);
         }
