@@ -5,6 +5,7 @@ import { useRouter } from '@/i18n/routing';
 import { Country, City } from '@/types/database';
 import { registerOrganizationAction } from '@/lib/actions/organizations';
 import { LocationPicker } from '@/components/maps/LocationPicker';
+import { WorldwideCityAutocomplete, PlaceSuggestion } from '@/components/maps/WorldwideCityAutocomplete';
 import {
   Building2,
   FileText,
@@ -40,11 +41,12 @@ export function OrgRegisterClientForm({ countries, cities, locale = 'ar' }: OrgR
     description: '',
     description_ar: '',
     organization_type: 'Human Rights NGO',
-    country_id: countries[0]?.id || '',
-    city_id: cities[0]?.id || '',
-    full_address: 'Berlin, Germany',
-    latitude: 52.5163,
-    longitude: 13.3777,
+    country_id: countries[0]?.id || 'c-iq',
+    city_id: cities[0]?.id || 'city-lalish',
+    cityNameDisplay: 'Lalish',
+    full_address: 'Lalish, Nineveh Governorate, Iraq',
+    latitude: 36.7712,
+    longitude: 43.2982,
     website: '',
     email: '',
     phone: '',
@@ -56,17 +58,33 @@ export function OrgRegisterClientForm({ countries, cities, locale = 'ar' }: OrgR
   const [error, setError] = useState<string | null>(null);
   const [successOrg, setSuccessOrg] = useState<any>(null);
 
-  const filteredCities = countries.find((c) => c.id === formData.country_id)
-    ? cities.filter((c) => c.country_id === formData.country_id)
-    : cities;
+  // When a user selects a place from Worldwide City Autocomplete
+  const handleSelectWorldwidePlace = (place: PlaceSuggestion) => {
+    // Find matching country if available
+    let matchedCountryId = formData.country_id;
+    if (place.countryCode) {
+      const c = countries.find(
+        (cnt) => cnt.code.toLowerCase() === place.countryCode.toLowerCase()
+      );
+      if (c) matchedCountryId = c.id;
+    }
 
-  const [customCityName, setCustomCityName] = useState('');
-  const [isCustomCity, setIsCustomCity] = useState(false);
+    setFormData((prev) => ({
+      ...prev,
+      country_id: matchedCountryId,
+      city_id: `custom:${place.cityName}`,
+      cityNameDisplay: place.cityName,
+      full_address: place.displayName || prev.full_address,
+      latitude: place.lat,
+      longitude: place.lon,
+    }));
+  };
 
   const handleLocationSelect = (lat: number, lon: number, address?: string, details?: any) => {
     setFormData((prev) => {
       let matchedCountryId = prev.country_id;
       let matchedCityId = prev.city_id;
+      let cityName = prev.cityNameDisplay;
 
       if (details?.countryCode) {
         const c = countries.find(
@@ -76,20 +94,8 @@ export function OrgRegisterClientForm({ countries, cities, locale = 'ar' }: OrgR
       }
 
       if (details?.cityName) {
-        const existingCity = cities.find(
-          (ct) =>
-            ct.name_en.toLowerCase() === details.cityName.toLowerCase() ||
-            ct.name_ar === details.cityName
-        );
-        if (existingCity) {
-          matchedCityId = existingCity.id;
-          setIsCustomCity(false);
-          setCustomCityName('');
-        } else {
-          matchedCityId = `custom:${details.cityName}`;
-          setCustomCityName(details.cityName);
-          setIsCustomCity(true);
-        }
+        cityName = details.cityName;
+        matchedCityId = `custom:${details.cityName}`;
       }
 
       return {
@@ -99,13 +105,9 @@ export function OrgRegisterClientForm({ countries, cities, locale = 'ar' }: OrgR
         full_address: address || prev.full_address,
         country_id: matchedCountryId,
         city_id: matchedCityId,
+        cityNameDisplay: cityName,
       };
     });
-  };
-
-  const handleCustomCityChange = (name: string) => {
-    setCustomCityName(name);
-    setFormData((prev) => ({ ...prev, city_id: name ? `custom:${name}` : '' }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -115,7 +117,7 @@ export function OrgRegisterClientForm({ countries, cities, locale = 'ar' }: OrgR
 
     const submissionData = {
       ...formData,
-      city_id: isCustomCity && customCityName ? `custom:${customCityName}` : formData.city_id,
+      city_id: formData.city_id,
     };
 
     const res = await registerOrganizationAction(submissionData);
@@ -287,17 +289,31 @@ export function OrgRegisterClientForm({ countries, cities, locale = 'ar' }: OrgR
         </div>
       </div>
 
-      {/* 2. Contact & Location */}
+      {/* 2. Live Worldwide Google Maps Auto-Complete & Location */}
       <div className="space-y-4">
         <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
           <MapPin className="w-5 h-5 text-amber-400" />
-          <span>{isAr ? '2. المقر والموقع الجغرافي حول العالم' : '2. Headquarters & Location'}</span>
+          <span>{isAr ? '2. المقر والموقع الجغرافي (تلقائي لجميع مدن العالم)' : '2. Headquarters & Global Location'}</span>
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2 space-y-1.5">
+            <label className="block text-xs font-bold text-amber-300">
+              {isAr
+                ? '📍 البحث التلقائي عن أي مدينة أو منطقة بالعالم (اكتب بالعربي أو الإنجليزي) *'
+                : '📍 Automatic Worldwide City / Area Search (Arabic or English) *'}
+            </label>
+            <WorldwideCityAutocomplete
+              countries={countries}
+              selectedCityName={formData.cityNameDisplay}
+              onSelectPlace={handleSelectWorldwidePlace}
+              isRtl={isAr}
+            />
+          </div>
+
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              {isAr ? 'الدولة *' : 'Country *'}
+              {isAr ? 'الدولة (يتم تحديدها تلقائياً)' : 'Country (Auto-detected)'}
             </label>
             <select
               value={formData.country_id}
@@ -313,57 +329,15 @@ export function OrgRegisterClientForm({ countries, cities, locale = 'ar' }: OrgR
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-semibold text-slate-300">
-                {isAr ? 'المدينة / المنطقة *' : 'City *'}
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsCustomCity(!isCustomCity);
-                  if (!isCustomCity) {
-                    setCustomCityName('');
-                  }
-                }}
-                className="text-[11px] text-amber-400 hover:text-amber-300 underline font-semibold"
-              >
-                {isCustomCity
-                  ? (isAr ? '← اختيار من القائمة' : '← Choose from list')
-                  : (isAr ? '+ كتابة اسم أي مدينة بالعالم' : '+ Enter custom city worldwide')}
-              </button>
-            </div>
-
-            {isCustomCity ? (
-              <input
-                type="text"
-                required
-                value={customCityName}
-                onChange={(e) => handleCustomCityChange(e.target.value)}
-                placeholder={isAr ? 'اكتب اسم المدينة (مثل: لالش، هانوفر، دهوك، برلين، باريس)...' : 'Type city name (e.g. Lalish, Berlin, Erbil, Paris)...'}
-                className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-amber-500/80 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-              />
-            ) : (
-              <select
-                value={formData.city_id}
-                onChange={(e) => {
-                  if (e.target.value === 'custom') {
-                    setIsCustomCity(true);
-                  } else {
-                    setFormData({ ...formData, city_id: e.target.value });
-                  }
-                }}
-                className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-              >
-                {filteredCities.map((ct) => (
-                  <option key={ct.id} value={ct.id}>
-                    {isAr ? (ct.name_ar || ct.name_en) : ct.name_en}
-                  </option>
-                ))}
-                <option value="custom">
-                  ✍️ {isAr ? 'مدينة أخرى حول العالم (اكتب أو حدد على الخريطة)...' : 'Other worldwide city (type / pick on map)...'}
-                </option>
-              </select>
-            )}
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              {isAr ? 'اسم المدينة المحددة' : 'Selected City'}
+            </label>
+            <input
+              type="text"
+              readOnly
+              value={formData.cityNameDisplay}
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900/60 border border-slate-700 text-amber-300 font-bold text-sm"
+            />
           </div>
 
           <div className="sm:col-span-2">
@@ -382,7 +356,7 @@ export function OrgRegisterClientForm({ countries, cities, locale = 'ar' }: OrgR
 
           <div className="sm:col-span-2">
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              {isAr ? 'تحديد الموقع على خريطة العالم التفاعلية' : 'Map Location Pin'}
+              {isAr ? 'تحديد وتعديل الموقع على خريطة العالم التفاعلية' : 'Interactive Map Pin'}
             </label>
             <LocationPicker
               initialLatitude={formData.latitude}

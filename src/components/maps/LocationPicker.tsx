@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { MapPin, Search } from 'lucide-react';
+import { MapPin, Search, Loader2, ExternalLink, Sparkles } from 'lucide-react';
 
 export interface LocationDetails {
   lat: number;
@@ -32,13 +32,17 @@ export function LocationPicker({
     lon: initialLongitude,
   });
   const [addressSearch, setAddressSearch] = useState('');
+  const [suggestions, setSuggestions] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchDropdownRef = useRef<HTMLDivElement>(null);
 
   // Reverse geocoding helper to extract city, country, postal code
   const fetchLocationDetails = async (lat: number, lon: number) => {
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1`
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1`,
+        { headers: { 'Accept-Language': 'ar,en,ku,de,fr' } }
       );
       const data = await res.json();
       if (data && data.address) {
@@ -149,79 +153,149 @@ export function LocationPicker({
     };
   }, []);
 
-  // Worldwide geocoding search query using OpenStreetMap Nominatim
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!addressSearch.trim()) return;
-
-    setIsSearching(true);
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(addressSearch)}`
-      );
-      const data = await res.json();
-      if (data && data.length > 0) {
-        const first = data[0];
-        const newLat = parseFloat(first.lat);
-        const newLon = parseFloat(first.lon);
-        const addr = first.address || {};
-        const cityName = addr.city || addr.town || addr.village || addr.municipality || addr.county || addressSearch;
-        const countryName = addr.country || '';
-        const countryCode = (addr.country_code || '').toUpperCase();
-
-        setCoords({ lat: newLat, lon: newLon });
-        onLocationSelect(newLat, newLon, first.display_name, {
-          lat: newLat,
-          lon: newLon,
-          address: first.display_name,
-          cityName,
-          countryName,
-          countryCode,
-        });
-
-        if (mapInstanceRef.current && markerRef.current) {
-          mapInstanceRef.current.setView([newLat, newLon], 14);
-          markerRef.current.setLatLng([newLat, newLon]);
-        }
+  // Sync coords from props if changed externally
+  useEffect(() => {
+    if (
+      initialLatitude !== coords.lat ||
+      initialLongitude !== coords.lon
+    ) {
+      setCoords({ lat: initialLatitude, lon: initialLongitude });
+      if (mapInstanceRef.current && markerRef.current) {
+        mapInstanceRef.current.setView([initialLatitude, initialLongitude], 13);
+        markerRef.current.setLatLng([initialLatitude, initialLongitude]);
       }
-    } catch (err) {
-      console.warn('Geocoding search failed:', err);
-    } finally {
-      setIsSearching(false);
+    }
+  }, [initialLatitude, initialLongitude]);
+
+  // Live Debounced Search Query for anywhere in the world
+  useEffect(() => {
+    if (!addressSearch.trim() || addressSearch.trim().length < 2) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&q=${encodeURIComponent(
+            addressSearch.trim()
+          )}`,
+          { headers: { 'Accept-Language': 'ar,en,ku,de,fr' } }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setSuggestions(data);
+            setShowSuggestions(data.length > 0);
+          }
+        }
+      } catch {
+      } finally {
+        setIsSearching(false);
+      }
+    }, 280);
+
+    return () => clearTimeout(timer);
+  }, [addressSearch]);
+
+  const selectSuggestion = (item: any) => {
+    const newLat = parseFloat(item.lat);
+    const newLon = parseFloat(item.lon);
+    const addr = item.address || {};
+    const cityName = addr.city || addr.town || addr.village || addr.municipality || addr.county || item.name || addressSearch;
+    const countryName = addr.country || '';
+    const countryCode = (addr.country_code || '').toUpperCase();
+
+    setCoords({ lat: newLat, lon: newLon });
+    setAddressSearch(item.display_name);
+    setShowSuggestions(false);
+
+    onLocationSelect(newLat, newLon, item.display_name, {
+      lat: newLat,
+      lon: newLon,
+      address: item.display_name,
+      cityName,
+      countryName,
+      countryCode,
+    });
+
+    if (mapInstanceRef.current && markerRef.current) {
+      mapInstanceRef.current.setView([newLat, newLon], 14);
+      markerRef.current.setLatLng([newLat, newLon]);
     }
   };
 
+  const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${coords.lat},${coords.lon}`;
+
   return (
     <div className="space-y-3">
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={addressSearch}
-          onChange={(e) => setAddressSearch(e.target.value)}
-          placeholder="ابحث عن أي مدينة أو شارع أو موقع في العالم (e.g. Lalish, Berlin, Erbil, Paris, Lincoln)..."
-          className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-        />
-        <button
-          type="button"
-          onClick={handleSearch}
-          disabled={isSearching}
-          className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs sm:text-sm shadow-md flex items-center gap-1.5 transition-all"
-        >
-          <Search className="w-4 h-4" />
-          <span>{isSearching ? 'جاري البحث...' : 'تحديد الموقع'}</span>
-        </button>
+      {/* Live Search Input with Instant Dropdown */}
+      <div ref={searchDropdownRef} className="relative">
+        <div className="relative">
+          <input
+            type="text"
+            value={addressSearch}
+            onChange={(e) => {
+              setAddressSearch(e.target.value);
+              setShowSuggestions(true);
+            }}
+            placeholder="ابحث عن أي مدينة أو منطقة أو معلم بالعالم (e.g. Lalish, Hannover, Duhok, Sinjar, Berlin, Paris)..."
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900 border border-amber-500/80 text-white placeholder-slate-400 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+          />
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400">
+            {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+          </div>
+        </div>
+
+        {/* Floating Suggestions */}
+        {showSuggestions && suggestions.length > 0 && (
+          <div className="absolute z-30 left-0 right-0 mt-1 bg-slate-900/98 backdrop-blur-md border border-amber-500/80 rounded-2xl shadow-2xl overflow-hidden divide-y divide-slate-800">
+            <div className="p-2 bg-slate-950 text-[11px] font-bold text-amber-400 flex items-center gap-1.5 border-b border-slate-800">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>نتائج البحث التلقائي حول العالم:</span>
+            </div>
+            {suggestions.map((item, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => selectSuggestion(item)}
+                className="w-full p-2.5 text-right hover:bg-amber-500/10 text-xs text-white flex items-center gap-2 transition-colors cursor-pointer"
+              >
+                <MapPin className="w-4 h-4 text-amber-400 shrink-0" />
+                <span className="truncate">{item.display_name}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
+      {/* Map Element */}
       <div
         ref={mapContainerRef}
-        className="w-full h-64 rounded-xl overflow-hidden border border-slate-700 relative z-10"
+        className="w-full h-64 rounded-xl overflow-hidden border border-slate-700 relative z-10 shadow-inner"
       />
 
-      <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-        <span>انقر على أي نقطة في الخريطة أو اسحب المؤشر لتحديد المدينة والعنوان تلقائياً.</span>
-        <span className="font-mono text-amber-400">
-          {coords.lat.toFixed(5)}, {coords.lon.toFixed(5)}
+      <div className="flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 px-1 gap-2">
+        <span className="text-[11px]">
+          📍 انقر على أي نقطة في الخريطة أو اسحب المؤشر لتحديد المدينة والإحداثيات تلقائياً.
         </span>
+
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-amber-400 font-bold">
+            {coords.lat.toFixed(5)}, {coords.lon.toFixed(5)}
+          </span>
+          <a
+            href={googleMapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold underline flex items-center gap-1"
+          >
+            <span>عرض على Google Maps</span>
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
       </div>
     </div>
   );

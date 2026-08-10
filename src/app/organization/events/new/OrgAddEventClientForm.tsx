@@ -6,6 +6,7 @@ import { useOrgLanguage } from '@/components/organization/OrgLanguageProvider';
 import { EventCategory, Country, City, Organization } from '@/types/database';
 import { POPULAR_TIMEZONES } from '@/lib/utils/timezone';
 import { LocationPicker } from '@/components/maps/LocationPicker';
+import { WorldwideCityAutocomplete, PlaceSuggestion } from '@/components/maps/WorldwideCityAutocomplete';
 import { createEventAction } from '@/lib/actions/events';
 import {
   Calendar,
@@ -48,6 +49,7 @@ export function OrgAddEventClientForm({
     timezone: 'Europe/Berlin',
     country_id: countries[0]?.id || '',
     city_id: cities[0]?.id || '',
+    cityNameDisplay: '',
     full_address: organization.full_address || 'Berlin, Germany',
     latitude: organization.latitude || 52.5163,
     longitude: organization.longitude || 13.3777,
@@ -65,17 +67,31 @@ export function OrgAddEventClientForm({
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
   const [resultEvent, setResultEvent] = useState<any>(null);
 
-  const filteredCities = countries.find((c) => c.id === formData.country_id)
-    ? cities.filter((c) => c.country_id === formData.country_id)
-    : cities;
+  const handleSelectWorldwidePlace = (place: PlaceSuggestion) => {
+    let matchedCountryId = formData.country_id;
+    if (place.countryCode) {
+      const c = countries.find(
+        (cnt) => cnt.code.toLowerCase() === place.countryCode.toLowerCase()
+      );
+      if (c) matchedCountryId = c.id;
+    }
 
-  const [customCityName, setCustomCityName] = useState('');
-  const [isCustomCity, setIsCustomCity] = useState(false);
+    setFormData((prev) => ({
+      ...prev,
+      country_id: matchedCountryId,
+      city_id: `custom:${place.cityName}`,
+      cityNameDisplay: place.cityName,
+      full_address: place.displayName || prev.full_address,
+      latitude: place.lat,
+      longitude: place.lon,
+    }));
+  };
 
   const handleLocationSelect = (lat: number, lon: number, address?: string, details?: any) => {
     setFormData((prev) => {
       let matchedCountryId = prev.country_id;
       let matchedCityId = prev.city_id;
+      let cityName = prev.cityNameDisplay;
 
       if (details?.countryCode) {
         const c = countries.find(
@@ -85,20 +101,8 @@ export function OrgAddEventClientForm({
       }
 
       if (details?.cityName) {
-        const existingCity = cities.find(
-          (ct) =>
-            ct.name_en.toLowerCase() === details.cityName.toLowerCase() ||
-            ct.name_ar === details.cityName
-        );
-        if (existingCity) {
-          matchedCityId = existingCity.id;
-          setIsCustomCity(false);
-          setCustomCityName('');
-        } else {
-          matchedCityId = `custom:${details.cityName}`;
-          setCustomCityName(details.cityName);
-          setIsCustomCity(true);
-        }
+        cityName = details.cityName;
+        matchedCityId = `custom:${details.cityName}`;
       }
 
       return {
@@ -108,13 +112,9 @@ export function OrgAddEventClientForm({
         full_address: address || prev.full_address,
         country_id: matchedCountryId,
         city_id: matchedCityId,
+        cityNameDisplay: cityName,
       };
     });
-  };
-
-  const handleCustomCityChange = (name: string) => {
-    setCustomCityName(name);
-    setFormData((prev) => ({ ...prev, city_id: name ? `custom:${name}` : '' }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -127,7 +127,7 @@ export function OrgAddEventClientForm({
       ...formData,
       organization_id: organization.id,
       organizer_name: organization.name,
-      city_id: isCustomCity && customCityName ? `custom:${customCityName}` : formData.city_id,
+      city_id: formData.city_id || `custom:${formData.cityNameDisplay || 'Lalish'}`,
     };
 
     const res = await createEventAction(submissionData);
@@ -342,17 +342,31 @@ export function OrgAddEventClientForm({
         </div>
       </div>
 
-      {/* 3. Location & Map */}
+      {/* 3. Worldwide Google Maps Auto-Complete & Venue Location */}
       <div className="space-y-4">
         <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
           <MapPin className="w-4 h-4 text-amber-400" />
-          <span>{isRtl ? '3. المكان والموقع الجغرافي' : '3. Location & Venue'}</span>
+          <span>{isRtl ? '3. المكان والموقع الجغرافي (تلقائي لجميع مدن العالم)' : '3. Location & Global Venue'}</span>
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2 space-y-1.5">
+            <label className="block text-xs font-bold text-amber-300">
+              {isRtl
+                ? '📍 البحث التلقائي عن أي مدينة أو منطقة بالعالم (اكتب بالعربي أو الإنجليزي) *'
+                : '📍 Automatic Worldwide City / Area Search (Arabic or English) *'}
+            </label>
+            <WorldwideCityAutocomplete
+              countries={countries}
+              selectedCityName={formData.cityNameDisplay}
+              onSelectPlace={handleSelectWorldwidePlace}
+              isRtl={isRtl}
+            />
+          </div>
+
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              {isRtl ? 'الدولة *' : 'Country *'}
+              {isRtl ? 'الدولة (تتحدث تلقائياً)' : 'Country'}
             </label>
             <select
               value={formData.country_id}
@@ -368,57 +382,15 @@ export function OrgAddEventClientForm({
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-semibold text-slate-300">
-                {isRtl ? 'المدينة / المنطقة *' : 'City *'}
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsCustomCity(!isCustomCity);
-                  if (!isCustomCity) {
-                    setCustomCityName('');
-                  }
-                }}
-                className="text-[11px] text-amber-400 hover:text-amber-300 underline font-semibold"
-              >
-                {isCustomCity
-                  ? (isRtl ? '← اختيار من القائمة' : '← Choose from list')
-                  : (isRtl ? '+ كتابة اسم أي مدينة بالعالم' : '+ Enter custom city worldwide')}
-              </button>
-            </div>
-
-            {isCustomCity ? (
-              <input
-                type="text"
-                required
-                value={customCityName}
-                onChange={(e) => handleCustomCityChange(e.target.value)}
-                placeholder={isRtl ? 'اكتب اسم المدينة (مثل: لالش، هانوفر، دهوك، برلين، باريس)...' : 'Type city name...'}
-                className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-amber-500/80 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-              />
-            ) : (
-              <select
-                value={formData.city_id}
-                onChange={(e) => {
-                  if (e.target.value === 'custom') {
-                    setIsCustomCity(true);
-                  } else {
-                    setFormData({ ...formData, city_id: e.target.value });
-                  }
-                }}
-                className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-              >
-                {filteredCities.map((ct) => (
-                  <option key={ct.id} value={ct.id}>
-                    {isRtl ? (ct.name_ar || ct.name_en) : ct.name_en}
-                  </option>
-                ))}
-                <option value="custom">
-                  ✍️ {isRtl ? 'مدينة أخرى حول العالم (اكتب أو حدد على الخريطة)...' : 'Other worldwide city (type / pick on map)...'}
-                </option>
-              </select>
-            )}
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              {isRtl ? 'المدينة المحددة' : 'Selected City'}
+            </label>
+            <input
+              type="text"
+              readOnly
+              value={formData.cityNameDisplay || 'Lalish'}
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900/60 border border-slate-700 text-amber-300 font-bold text-sm"
+            />
           </div>
 
           <div className="sm:col-span-2">
@@ -500,7 +472,7 @@ export function OrgAddEventClientForm({
         <button
           type="submit"
           disabled={loading}
-          className="w-full sm:w-auto px-8 py-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 hover:scale-105"
+          className="w-full sm:w-auto px-8 py-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 hover:scale-[1.01]"
         >
           {loading ? (
             <span>{isRtl ? 'جاري نشر الفعالية...' : 'Publishing Event...'}</span>

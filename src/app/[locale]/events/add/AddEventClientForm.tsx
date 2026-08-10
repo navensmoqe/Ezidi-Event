@@ -6,6 +6,7 @@ import { useRouter } from '@/i18n/routing';
 import { EventCategory, Country, City, Organization } from '@/types/database';
 import { POPULAR_TIMEZONES } from '@/lib/utils/timezone';
 import { LocationPicker } from '@/components/maps/LocationPicker';
+import { WorldwideCityAutocomplete, PlaceSuggestion } from '@/components/maps/WorldwideCityAutocomplete';
 import { createEventAction } from '@/lib/actions/events';
 import {
   Calendar,
@@ -18,6 +19,7 @@ import {
   CheckCircle2,
   AlertCircle,
   AlertTriangle,
+  Sparkles,
 } from 'lucide-react';
 
 interface AddEventClientFormProps {
@@ -37,6 +39,7 @@ export function AddEventClientForm({
   const common = useTranslations('common');
   const locale = useLocale();
   const router = useRouter();
+  const isAr = locale === 'ar';
 
   const [formData, setFormData] = useState({
     title: '',
@@ -49,6 +52,7 @@ export function AddEventClientForm({
     timezone: 'Europe/Berlin',
     country_id: countries[0]?.id || '',
     city_id: cities[0]?.id || '',
+    cityNameDisplay: '',
     full_address: 'Pariser Platz 1, 10117 Berlin, Germany',
     latitude: 52.5163,
     longitude: 13.3777,
@@ -66,17 +70,31 @@ export function AddEventClientForm({
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
   const [resultEvent, setResultEvent] = useState<any>(null);
 
-  const filteredCities = countries.find((c) => c.id === formData.country_id)
-    ? cities.filter((c) => c.country_id === formData.country_id)
-    : cities;
+  const handleSelectWorldwidePlace = (place: PlaceSuggestion) => {
+    let matchedCountryId = formData.country_id;
+    if (place.countryCode) {
+      const c = countries.find(
+        (cnt) => cnt.code.toLowerCase() === place.countryCode.toLowerCase()
+      );
+      if (c) matchedCountryId = c.id;
+    }
 
-  const [customCityName, setCustomCityName] = useState('');
-  const [isCustomCity, setIsCustomCity] = useState(false);
+    setFormData((prev) => ({
+      ...prev,
+      country_id: matchedCountryId,
+      city_id: `custom:${place.cityName}`,
+      cityNameDisplay: place.cityName,
+      full_address: place.displayName || prev.full_address,
+      latitude: place.lat,
+      longitude: place.lon,
+    }));
+  };
 
   const handleLocationSelect = (lat: number, lon: number, address?: string, details?: any) => {
     setFormData((prev) => {
       let matchedCountryId = prev.country_id;
       let matchedCityId = prev.city_id;
+      let cityName = prev.cityNameDisplay;
 
       if (details?.countryCode) {
         const c = countries.find(
@@ -86,20 +104,8 @@ export function AddEventClientForm({
       }
 
       if (details?.cityName) {
-        const existingCity = cities.find(
-          (ct) =>
-            ct.name_en.toLowerCase() === details.cityName.toLowerCase() ||
-            ct.name_ar === details.cityName
-        );
-        if (existingCity) {
-          matchedCityId = existingCity.id;
-          setIsCustomCity(false);
-          setCustomCityName('');
-        } else {
-          matchedCityId = `custom:${details.cityName}`;
-          setCustomCityName(details.cityName);
-          setIsCustomCity(true);
-        }
+        cityName = details.cityName;
+        matchedCityId = `custom:${details.cityName}`;
       }
 
       return {
@@ -109,13 +115,9 @@ export function AddEventClientForm({
         full_address: address || prev.full_address,
         country_id: matchedCountryId,
         city_id: matchedCityId,
+        cityNameDisplay: cityName,
       };
     });
-  };
-
-  const handleCustomCityChange = (name: string) => {
-    setCustomCityName(name);
-    setFormData((prev) => ({ ...prev, city_id: name ? `custom:${name}` : '' }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -126,7 +128,7 @@ export function AddEventClientForm({
 
     const submissionData = {
       ...formData,
-      city_id: isCustomCity && customCityName ? `custom:${customCityName}` : formData.city_id,
+      city_id: formData.city_id || `custom:${formData.cityNameDisplay || 'Lalish'}`,
     };
 
     const res = await createEventAction(submissionData);
@@ -136,14 +138,6 @@ export function AddEventClientForm({
       setError(res.error || 'Failed to submit event.');
     } else {
       setResultEvent(res);
-      if (res.event) {
-        try {
-          const stored = JSON.parse(localStorage.getItem('ezidi_submitted_events') || '[]');
-          const filtered = stored.filter((e: any) => e.id !== res.event.id);
-          filtered.unshift(res.event);
-          localStorage.setItem('ezidi_submitted_events', JSON.stringify(filtered));
-        } catch {}
-      }
       if (res.potentialDuplicateWarning) {
         setDuplicateWarning(res.potentialDuplicateWarning);
       }
@@ -154,44 +148,52 @@ export function AddEventClientForm({
     const isDirect = resultEvent.isPublishedDirectly;
     return (
       <div className="glass-panel rounded-3xl p-8 sm:p-12 border border-slate-800 text-center space-y-6 animate-in zoom-in-95">
-        <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center mx-auto text-3xl">
+        <div className="w-20 h-20 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center mx-auto text-4xl shadow-xl shadow-emerald-500/10">
           ✓
         </div>
 
-        <div className="space-y-2">
-          <h2 className="text-2xl sm:text-3xl font-black text-white">
-            {isDirect ? 'Event Published Successfully!' : 'Event Submitted for Review'}
+        <div className="space-y-3">
+          <h2 className="text-2xl sm:text-4xl font-black text-white">
+            {isDirect ? (isAr ? 'تم نشر الفعالية مباشرة بنجاح!' : 'Event Published Successfully!') : t('successTitle')}
           </h2>
-          <p className="text-sm text-slate-300 max-w-lg mx-auto leading-relaxed">
+          <p className="text-sm sm:text-base text-slate-300 max-w-lg mx-auto leading-relaxed">
             {isDirect
-              ? 'Your event was published directly by your verified organization and is now live on the public website and world map.'
-              : 'Your submission has been received and entered into our moderation queue. Our team reviews all public submissions to ensure accurate details.'}
+              ? (isAr ? 'تم نشر الفعالية فوراً بالاعتماد على صلاحية النشر المباشر للمنظمة المعتمدة.' : 'Your event was published directly by your verified organization.')
+              : t('successDesc')}
           </p>
         </div>
 
         {duplicateWarning && (
-          <div className="p-4 rounded-xl bg-amber-950/70 border border-amber-500/50 text-amber-300 text-xs flex items-center gap-2 max-w-md mx-auto text-left">
-            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
-            <span>Similar event notice: {duplicateWarning}</span>
+          <div className="p-4 rounded-xl bg-amber-950/60 border border-amber-800 text-amber-300 text-xs text-left max-w-md mx-auto flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold block text-white">{isAr ? 'ملاحظة تشابه:' : 'Potential Duplicate Note:'}</span>
+              <span>{duplicateWarning}</span>
+            </div>
           </div>
         )}
 
-        <div className="pt-4 flex flex-wrap items-center justify-center gap-4">
-          {isDirect ? (
-            <button
-              onClick={() => router.push(`/events/${resultEvent.event.slug}`)}
-              className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm shadow-md"
-            >
-              View Live Event Page →
-            </button>
-          ) : (
-            <button
-              onClick={() => router.push('/events')}
-              className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm shadow-md"
-            >
-              Back to Directory
-            </button>
-          )}
+        <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <button
+            onClick={() => router.push('/events')}
+            className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm"
+          >
+            {isAr ? 'استكشاف جميع الفعاليات' : 'Browse All Events'}
+          </button>
+          <button
+            onClick={() => {
+              setResultEvent(null);
+              setFormData({
+                ...formData,
+                title: '',
+                title_ar: '',
+                description: '',
+              });
+            }}
+            className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm shadow-md"
+          >
+            {isAr ? '+ إضافة فعالية أخرى' : '+ Submit Another Event'}
+          </button>
         </div>
       </div>
     );
@@ -210,7 +212,7 @@ export function AddEventClientForm({
       <div className="space-y-4">
         <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
           <FileText className="w-4 h-4 text-amber-400" />
-          <span>1. Event Title & Category</span>
+          <span>1. {t('sectionBasic')}</span>
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -223,22 +225,8 @@ export function AddEventClientForm({
               required
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              placeholder="e.g. Berlin Solidarity Rally for Yazidi Justice"
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              {t('fieldTitleAr')}
-            </label>
-            <input
-              type="text"
-              dir="rtl"
-              value={formData.title_ar}
-              onChange={(e) => setFormData({ ...formData, title_ar: e.target.value })}
-              placeholder="عنوان الفعالية بالعربية..."
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              placeholder={isAr ? 'مثال: وقفة تضامنية وإحياء ذكرى الإبادة الإيزيدية' : 'e.g. Annual Ezidi Remembrance & Peace Vigil'}
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
             />
           </div>
 
@@ -251,24 +239,51 @@ export function AddEventClientForm({
               onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
               className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
             >
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {locale === 'ar' ? cat.name_ar : cat.name_en}
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {isAr ? c.name_ar : c.name_en}
                 </option>
               ))}
             </select>
           </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              {isAr ? 'المنظمة أو الجهة المنظمة' : 'Organizing Body'}
+            </label>
+            <input
+              type="text"
+              value={formData.organizer_name}
+              onChange={(e) => setFormData({ ...formData, organizer_name: e.target.value })}
+              placeholder={isAr ? 'اسم المنظمة أو اللجنة المنظمة' : 'Organization or Host Name'}
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              {t('fieldDescription')} *
+            </label>
+            <textarea
+              required
+              rows={4}
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              placeholder={isAr ? 'اكتب تفاصيل الفعالية، جدول الأعمال، المتحدثين، وأي تعليمات للمشاركين...' : 'Provide complete context, schedule, guest speakers, and instructions...'}
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+            />
+          </div>
         </div>
       </div>
 
-      {/* Section 2: Date, Time & IANA Timezone */}
+      {/* Section 2: Date and Time */}
       <div className="space-y-4">
         <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
           <Calendar className="w-4 h-4 text-amber-400" />
-          <span>2. Date, Time & Timezone</span>
+          <span>2. {t('sectionDateTime')}</span>
         </h3>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
               {t('fieldDate')} *
@@ -307,7 +322,7 @@ export function AddEventClientForm({
             />
           </div>
 
-          <div className="sm:col-span-3">
+          <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
               {t('fieldTimezone')} *
             </label>
@@ -318,7 +333,7 @@ export function AddEventClientForm({
             >
               {POPULAR_TIMEZONES.map((tz) => (
                 <option key={tz.value} value={tz.value}>
-                  {tz.label} ({tz.value})
+                  {tz.label}
                 </option>
               ))}
             </select>
@@ -326,14 +341,28 @@ export function AddEventClientForm({
         </div>
       </div>
 
-      {/* Section 3: Geographic Venue & Map Picker */}
+      {/* Section 3: Live Worldwide Google Maps Auto-Complete & Venue Location */}
       <div className="space-y-4">
         <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
           <MapPin className="w-4 h-4 text-amber-400" />
-          <span>3. Geographic Venue & Map Pin</span>
+          <span>3. {isAr ? 'المكان والموقع الجغرافي (تلقائي لجميع مدن العالم)' : '3. Global Venue Location'}</span>
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2 space-y-1.5">
+            <label className="block text-xs font-bold text-amber-300">
+              {isAr
+                ? '📍 البحث التلقائي عن أي مدينة أو منطقة بالعالم (اكتب بالعربي أو الإنجليزي) *'
+                : '📍 Automatic Worldwide City / Area Search (Arabic or English) *'}
+            </label>
+            <WorldwideCityAutocomplete
+              countries={countries}
+              selectedCityName={formData.cityNameDisplay}
+              onSelectPlace={handleSelectWorldwidePlace}
+              isRtl={isAr}
+            />
+          </div>
+
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
               {t('fieldCountry')} *
@@ -345,64 +374,22 @@ export function AddEventClientForm({
             >
               {countries.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {locale === 'ar' ? c.name_ar : c.name_en}
+                  {isAr ? c.name_ar : c.name_en}
                 </option>
               ))}
             </select>
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-semibold text-slate-300">
-                {t('fieldCity')} *
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsCustomCity(!isCustomCity);
-                  if (!isCustomCity) {
-                    setCustomCityName('');
-                  }
-                }}
-                className="text-[11px] text-amber-400 hover:text-amber-300 underline font-semibold"
-              >
-                {isCustomCity
-                  ? (locale === 'ar' ? '← اختيار من القائمة' : '← Choose from list')
-                  : (locale === 'ar' ? '+ كتابة اسم أي مدينة بالعالم' : '+ Enter custom city')}
-              </button>
-            </div>
-
-            {isCustomCity ? (
-              <input
-                type="text"
-                required
-                value={customCityName}
-                onChange={(e) => handleCustomCityChange(e.target.value)}
-                placeholder={locale === 'ar' ? 'اكتب اسم المدينة (مثال: لالش، دهوك، هانوفر، سيدني...)' : 'Type city name (e.g. Lalish, Duhok, Hanover, Sydney...)'}
-                className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-amber-500/80 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-              />
-            ) : (
-              <select
-                value={formData.city_id}
-                onChange={(e) => {
-                  if (e.target.value === 'custom') {
-                    setIsCustomCity(true);
-                  } else {
-                    setFormData({ ...formData, city_id: e.target.value });
-                  }
-                }}
-                className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-              >
-                {filteredCities.map((ct) => (
-                  <option key={ct.id} value={ct.id}>
-                    {locale === 'ar' ? ct.name_ar : ct.name_en}
-                  </option>
-                ))}
-                <option value="custom">
-                  {locale === 'ar' ? '✍️ مدينة أخرى في العالم (كتابة يدوية / تحديد بالخريطة)...' : '✍️ Other worldwide city (type / pick on map)...'}
-                </option>
-              </select>
-            )}
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              {isAr ? 'المدينة المحددة' : 'Selected City'}
+            </label>
+            <input
+              type="text"
+              readOnly
+              value={formData.cityNameDisplay || 'Lalish'}
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900/60 border border-slate-700 text-amber-300 font-bold text-sm"
+            />
           </div>
 
           <div className="sm:col-span-2">
@@ -436,23 +423,23 @@ export function AddEventClientForm({
       <div className="space-y-4">
         <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
           <Building2 className="w-4 h-4 text-amber-400" />
-          <span>4. Organization, Description & Sources</span>
+          <span>4. {isAr ? 'المنظمة ووسائل الاتصال' : 'Organization & Media Links'}</span>
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Select Verified Organization (Optional)
+              {isAr ? 'المنظمة المسجلة (اختياري)' : 'Select Verified Organization (Optional)'}
             </label>
             <select
               value={formData.organization_id}
               onChange={(e) => setFormData({ ...formData, organization_id: e.target.value })}
               className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
             >
-              <option value="">Independent Community Submission</option>
-              {organizations.map((org) => (
-                <option key={org.id} value={org.id}>
-                  {org.name} {org.direct_publishing_enabled ? '(Direct Publish Active)' : ''}
+              <option value="">{isAr ? '-- بدون ربط بمنظمة محددة --' : '-- None / Independent Event --'}</option>
+              {organizations.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name} {o.direct_publishing_enabled ? '⚡' : ''}
                 </option>
               ))}
             </select>
@@ -460,54 +447,14 @@ export function AddEventClientForm({
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Organizer Name (If independent)
-            </label>
-            <input
-              type="text"
-              value={formData.organizer_name}
-              onChange={(e) => setFormData({ ...formData, organizer_name: e.target.value })}
-              placeholder="e.g. Diaspora Youth Coalition"
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            />
-          </div>
-
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              {t('fieldDescription')} *
-            </label>
-            <textarea
-              required
-              rows={4}
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Outline the schedule, speakers, memorial moments, or purpose of the event..."
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
               {t('fieldPoster')}
             </label>
             <input
-              type="url"
+              type="text"
               value={formData.poster_url}
               onChange={(e) => setFormData({ ...formData, poster_url: e.target.value })}
-              placeholder="https://example.org/poster.jpg"
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              {t('fieldSource')}
-            </label>
-            <input
-              type="url"
-              value={formData.source_url}
-              onChange={(e) => setFormData({ ...formData, source_url: e.target.value })}
-              placeholder="https://example.org/press-release"
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              placeholder="https://example.com/poster.jpg"
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
             />
           </div>
 
@@ -519,34 +466,41 @@ export function AddEventClientForm({
               type="email"
               value={formData.contact_email}
               onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })}
-              placeholder="organizer@community.org"
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              placeholder="events@ezidiorg.com"
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 font-mono"
             />
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Official Website (Optional)
+              {t('fieldSourceUrl')}
             </label>
             <input
-              type="url"
-              value={formData.official_website}
-              onChange={(e) => setFormData({ ...formData, official_website: e.target.value })}
-              placeholder="https://organization.org"
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              type="text"
+              value={formData.source_url}
+              onChange={(e) => setFormData({ ...formData, source_url: e.target.value })}
+              placeholder="https://facebook.com/events/123"
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
             />
           </div>
         </div>
       </div>
 
       {/* Submit Button */}
-      <div className="pt-4 border-t border-slate-800 flex items-center justify-end gap-4">
+      <div className="pt-4 border-t border-slate-800 flex items-center justify-end">
         <button
           type="submit"
-          disabled={loading || formData.title.length < 3 || formData.description.length < 10}
-          className="px-8 py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-sm shadow-lg shadow-amber-500/25 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+          disabled={loading}
+          className="w-full sm:w-auto px-8 py-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 hover:scale-[1.01]"
         >
-          {loading ? 'Submitting & Validating...' : t('submitButton')}
+          {loading ? (
+            <span>{common('loading')}</span>
+          ) : (
+            <>
+              <Sparkles className="w-5 h-5" />
+              <span>{t('submitBtn')}</span>
+            </>
+          )}
         </button>
       </div>
     </form>
