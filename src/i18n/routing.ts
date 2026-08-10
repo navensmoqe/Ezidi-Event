@@ -2,8 +2,8 @@ import { defineRouting } from 'next-intl/routing';
 import { createSharedPathnamesNavigation } from 'next-intl/navigation';
 
 export const routing = defineRouting({
-  locales: ['en', 'ar', 'de', 'fr'],
-  defaultLocale: 'en',
+  locales: ['ar', 'en'],
+  defaultLocale: 'ar',
   localePrefix: 'always',
 });
 

@@ -58,7 +58,7 @@ export type ReportType =
 
 export type ReportStatus = 'open' | 'investigating' | 'resolved' | 'dismissed';
 
-export type Locale = 'en' | 'ar' | 'de' | 'fr';
+export type Locale = 'ar' | 'en';
 
 export interface UserProfile {
   id: string;
