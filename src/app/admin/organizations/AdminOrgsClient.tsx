@@ -53,17 +53,51 @@ export function AdminOrgsClient({ initialOrganizations }: AdminOrgsClientProps) 
           try {
             verifiedLocal = JSON.parse(localStorage.getItem('ezidi_verified_org_ids') || '[]');
           } catch {}
-          const merged = data.organizations.map((org: Organization) => {
-            if (verifiedLocal.includes(org.id)) {
-              return {
-                ...org,
-                verification_status: 'verified' as const,
-                direct_publishing_enabled: true,
-              };
-            }
-            return org;
+
+          let submittedOrgs: Organization[] = [];
+          try {
+            submittedOrgs = JSON.parse(localStorage.getItem('ezidi_submitted_orgs') || '[]');
+          } catch {}
+
+          setOrgs((prev) => {
+            const map = new Map<string, Organization>();
+
+            // 1. Existing state items
+            prev.forEach((o) => {
+              if (o && o.id) map.set(o.id, o);
+            });
+
+            // 2. Server items
+            data.organizations.forEach((org: Organization) => {
+              if (org && org.id) {
+                if (verifiedLocal.includes(org.id)) {
+                  map.set(org.id, {
+                    ...org,
+                    verification_status: 'verified',
+                    direct_publishing_enabled: true,
+                  });
+                } else {
+                  map.set(org.id, org);
+                }
+              }
+            });
+
+            // 3. Local submitted organizations (e.g. New ezidi)
+            submittedOrgs.forEach((locOrg: Organization) => {
+              if (locOrg && locOrg.id) {
+                const isVerified = verifiedLocal.includes(locOrg.id);
+                const existing = map.get(locOrg.id);
+                map.set(locOrg.id, {
+                  ...locOrg,
+                  ...(existing || {}),
+                  verification_status: isVerified ? 'verified' : (existing?.verification_status || locOrg.verification_status || 'pending'),
+                  direct_publishing_enabled: isVerified ? true : (existing?.direct_publishing_enabled ?? locOrg.direct_publishing_enabled ?? false),
+                });
+              }
+            });
+
+            return Array.from(map.values());
           });
-          setOrgs(merged);
         }
       }
     } catch {}

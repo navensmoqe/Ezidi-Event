@@ -31,6 +31,11 @@ export function OrganizationsDirectoryClient({
               verifiedIds = JSON.parse(localStorage.getItem('ezidi_verified_org_ids') || '[]');
             } catch {}
 
+            let submittedOrgs: Organization[] = [];
+            try {
+              submittedOrgs = JSON.parse(localStorage.getItem('ezidi_submitted_orgs') || '[]');
+            } catch {}
+
             const activeVerified = data.organizations.filter(
               (o: Organization) =>
                 (o.verification_status === 'verified' || verifiedIds.includes(o.id)) &&
@@ -46,6 +51,12 @@ export function OrganizationsDirectoryClient({
               // Verified from API & Local
               activeVerified.forEach((o: Organization) => {
                 if (o && o.id) map.set(o.id, { ...o, verification_status: 'verified' });
+              });
+              // Local submitted that got verified
+              submittedOrgs.forEach((locOrg: Organization) => {
+                if (locOrg && locOrg.id && (verifiedIds.includes(locOrg.id) || locOrg.verification_status === 'verified')) {
+                  map.set(locOrg.id, { ...locOrg, verification_status: 'verified', direct_publishing_enabled: true });
+                }
               });
               return Array.from(map.values());
             });
