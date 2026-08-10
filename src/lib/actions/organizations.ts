@@ -7,6 +7,8 @@ import { logAuditEvent } from '@/lib/services/audit';
 import { NotificationService } from '@/lib/services/notifications';
 import { UserRole, Organization } from '@/types/database';
 import { revalidatePath } from 'next/cache';
+import { headers } from 'next/headers';
+import { getCurrentUserSession } from '@/lib/actions/auth';
 
 function normalizeUrl(url?: string | null): string | null {
   if (!url || !url.trim()) return null;
@@ -15,6 +17,19 @@ function normalizeUrl(url?: string | null): string | null {
     return trimmed;
   }
   return `https://${trimmed}`;
+}
+
+function getRegistrationRateLimitKey(userContext?: { id: string }) {
+  if (userContext?.id) return `org-registration:user:${userContext.id}`;
+
+  try {
+    const requestHeaders = headers();
+    const forwardedFor = requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim();
+    const realIp = requestHeaders.get('x-real-ip')?.trim();
+    return `org-registration:ip:${forwardedFor || realIp || 'anonymous'}`;
+  } catch {
+    return 'org-registration:anonymous';
+  }
 }
 
 const orgRegistrationSchema = z.object({
@@ -36,7 +51,7 @@ const orgRegistrationSchema = z.object({
 });
 
 export async function registerOrganizationAction(formData: unknown, userContext?: { id: string; role: UserRole; email: string }) {
-  const rateLimitKey = userContext?.id || 'anon-org-reg';
+  const rateLimitKey = getRegistrationRateLimitKey(userContext);
   const rateCheck = await checkRateLimit(rateLimitKey, 'ORG_REGISTRATION');
   if (!rateCheck.success) {
     return {
@@ -75,28 +90,39 @@ export async function registerOrganizationAction(formData: unknown, userContext?
 
   const initialPassword = (typeof raw.password === 'string' && raw.password.trim()) ? raw.password.trim() : 'Ezidi@2026';
 
-  const newOrg = await db.organizations.create({
-    name: data.name,
-    name_ar: data.name_ar,
-    slug,
-    password: initialPassword,
-    description: data.description,
-    description_ar: data.description_ar,
-    organization_type: data.organization_type,
-    country_id: resolvedCountryId,
-    city_id: resolvedCityId,
-    full_address: data.full_address,
-    latitude: data.latitude,
-    longitude: data.longitude,
-    website: data.website || null,
-    email: data.email.toLowerCase().trim(),
-    phone: data.phone || null,
-    logo: data.logo || null,
-    organization_status: 'active',
-    verification_status: 'pending',
-    direct_publishing_enabled: false,
-    is_demo: true,
-  });
+  let newOrg: Organization;
+  try {
+    newOrg = await db.organizations.create(
+      {
+        name: data.name,
+        name_ar: data.name_ar,
+        slug,
+        password: initialPassword,
+        description: data.description,
+        description_ar: data.description_ar,
+        organization_type: data.organization_type,
+        country_id: resolvedCountryId,
+        city_id: resolvedCityId,
+        full_address: data.full_address,
+        latitude: data.latitude,
+        longitude: data.longitude,
+        website: data.website || null,
+        email: data.email.toLowerCase().trim(),
+        phone: data.phone || null,
+        logo: data.logo || null,
+        organization_status: 'active',
+        verification_status: 'pending',
+        direct_publishing_enabled: false,
+        is_demo: true,
+      },
+      { requireCloudSync: true }
+    );
+  } catch {
+    return {
+      success: false,
+      error: 'Unable to deliver your registration to the review queue. Please try again shortly.',
+    };
+  }
 
   await logAuditEvent({
     actor_id: userContext?.id || 'anonymous',
@@ -205,36 +231,98 @@ export async function suspendOrganizationAction(
 export async function updateOrganizationProfileAction(
   orgId: string,
   formData: Partial<Organization>,
-  userContext?: { id: string; role: UserRole; email: string }
+  _userContext?: { id: string; role: UserRole; email: string }
 ) {
   const org = await db.organizations.findById(orgId);
   if (!org) return { success: false, error: 'Organization not found.' };
 
-  const safeData: Partial<Organization> = { ...formData };
-  if (safeData.email) {
-    safeData.email = safeData.email.toLowerCase().trim();
+  // Privileged attributes are only changed by dedicated, audited admin actions.
+  const protectedFields: Array<keyof Organization> = [
+    'id',
+    'slug',
+    'organization_status',
+    'verification_status',
+    'verified_at',
+    'verified_by',
+    'verification_notes',
+    'direct_publishing_enabled',
+    'country_id',
+    'region_id',
+    'city_id',
+    'latitude',
+    'longitude',
+    'is_demo',
+    'created_at',
+    'updated_at',
+  ];
+  if (protectedFields.some((field) => Object.prototype.hasOwnProperty.call(formData, field))) {
+    return { success: false, error: 'Unauthorized: Protected organization attributes cannot be updated here.' };
   }
-  if (safeData.website) {
-    safeData.website = normalizeUrl(safeData.website);
+
+  // Resolve identity from the server-side session. Never trust a user object
+  // supplied with a server action request.
+  let session: Awaited<ReturnType<typeof getCurrentUserSession>>;
+  try {
+    session = await getCurrentUserSession();
+  } catch {
+    return { success: false, error: 'Unauthorized: Please sign in to update this organization.' };
   }
-  if (safeData.logo) {
-    safeData.logo = normalizeUrl(safeData.logo);
+  if (!session) {
+    return { success: false, error: 'Unauthorized: Please sign in to update this organization.' };
   }
+
+  const isPlatformAdmin = session.role === 'super_admin' || session.role === 'admin';
+  const isOrganizationOwner =
+    session.organizationId === orgId ||
+    (['organization_owner', 'organization_admin'].includes(session.role) && session.email === org.email);
+
+  if (!isPlatformAdmin && !isOrganizationOwner) {
+    return { success: false, error: 'Unauthorized: You cannot update this organization.' };
+  }
+
+  const editableFields: Array<keyof Organization> = [
+    'name',
+    'name_ar',
+    'name_de',
+    'name_fr',
+    'description',
+    'description_ar',
+    'description_de',
+    'description_fr',
+    'email',
+    'phone',
+    'website',
+    'logo',
+    'cover_image',
+    'full_address',
+    'postal_code',
+    'street',
+    'house_number',
+    'password',
+  ];
+  const safeData = Object.fromEntries(
+    editableFields.flatMap((field) =>
+      Object.prototype.hasOwnProperty.call(formData, field) ? [[field, formData[field]]] : []
+    )
+  ) as Partial<Organization>;
+
+  if (safeData.email) safeData.email = safeData.email.toLowerCase().trim();
+  if (safeData.website) safeData.website = normalizeUrl(safeData.website);
+  if (safeData.logo) safeData.logo = normalizeUrl(safeData.logo);
+  if (safeData.cover_image) safeData.cover_image = normalizeUrl(safeData.cover_image);
 
   const updated = await db.organizations.update(orgId, safeData);
 
-  if (userContext) {
-    await logAuditEvent({
-      actor_id: userContext.id,
-      actor_email: userContext.email,
-      actor_role: userContext.role,
-      action: 'ORGANIZATION_PROFILE_UPDATED',
-      entity_type: 'organization',
-      entity_id: orgId,
-      previous_values: org as unknown as Record<string, unknown>,
-      new_values: safeData as Record<string, unknown>,
-    });
-  }
+  await logAuditEvent({
+    actor_id: session.userId,
+    actor_email: session.email,
+    actor_role: session.role as UserRole,
+    action: 'ORGANIZATION_PROFILE_UPDATED',
+    entity_type: 'organization',
+    entity_id: orgId,
+    previous_values: org as unknown as Record<string, unknown>,
+    new_values: safeData as Record<string, unknown>,
+  });
 
   try {
     revalidatePath('/admin/organizations');

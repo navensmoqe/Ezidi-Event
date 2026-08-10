@@ -6,7 +6,7 @@ const CLOUD_CONFIG = {
   BASE_URL: 'https://api.restful-api.dev/objects',
 };
 
-async function getIndexIds(indexObjectId: string): Promise<string[]> {
+async function getIndexIds(indexObjectId: string): Promise<string[] | null> {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3500);
@@ -17,20 +17,21 @@ async function getIndexIds(indexObjectId: string): Promise<string[]> {
     });
     clearTimeout(timeoutId);
 
-    if (!res.ok) return [];
+    if (!res.ok) return null;
     const json = await res.json();
     if (json && json.data && Array.isArray(json.data.ids)) {
       return json.data.ids;
     }
-    return [];
+    return null;
   } catch {
-    return [];
+    return null;
   }
 }
 
 async function addIdToIndex(indexObjectId: string, indexName: string, newId: string): Promise<boolean> {
   try {
     const existingIds = await getIndexIds(indexObjectId);
+    if (!existingIds) return false;
     if (!existingIds.includes(newId)) {
       const updatedIds = [newId, ...existingIds].slice(0, 100);
       const controller = new AbortController();
@@ -59,7 +60,7 @@ export const CloudSync = {
   async getOrganizations(): Promise<Organization[]> {
     try {
       const ids = await getIndexIds(CLOUD_CONFIG.ORGS_INDEX_ID);
-      if (ids.length === 0) return [];
+      if (!ids?.length) return [];
 
       const query = ids.map((id) => `id=${id}`).join('&');
       const controller = new AbortController();
@@ -85,7 +86,7 @@ export const CloudSync = {
     }
   },
 
-  async saveOrganization(org: Organization): Promise<void> {
+  async saveOrganization(org: Organization): Promise<boolean> {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4500);
@@ -104,10 +105,13 @@ export const CloudSync = {
       if (res.ok) {
         const createdObj = await res.json();
         if (createdObj && createdObj.id) {
-          await addIdToIndex(CLOUD_CONFIG.ORGS_INDEX_ID, 'ezidi_index_orgs', createdObj.id);
+          return addIdToIndex(CLOUD_CONFIG.ORGS_INDEX_ID, 'ezidi_index_orgs', createdObj.id);
         }
       }
-    } catch {}
+      return false;
+    } catch {
+      return false;
+    }
   },
 
   async updateOrganization(orgId: string, updates: Partial<Organization>): Promise<void> {
@@ -133,7 +137,7 @@ export const CloudSync = {
   async getEvents(): Promise<EventItem[]> {
     try {
       const ids = await getIndexIds(CLOUD_CONFIG.EVENTS_INDEX_ID);
-      if (ids.length === 0) return [];
+      if (!ids?.length) return [];
 
       const query = ids.map((id) => `id=${id}`).join('&');
       const controller = new AbortController();

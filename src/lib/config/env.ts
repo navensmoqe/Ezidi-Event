@@ -6,7 +6,7 @@ const envSchema = z.object({
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().default('mock-anon-key'),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   NEXT_PUBLIC_APP_URL: z.string().default('http://localhost:3000'),
-  NEXT_PUBLIC_DEFAULT_LOCALE: z.enum(['ar', 'en']).default('ar'),
+  NEXT_PUBLIC_DEFAULT_LOCALE: z.enum(['ar', 'en', 'de', 'fr']).default('ar'),
   UPSTASH_REDIS_REST_URL: z.string().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
 });

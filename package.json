@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:security": "node scripts/test-security.mjs"
+    "test:security": "tsx scripts/test-platform.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.1",
@@ -39,6 +39,7 @@
     "eslint-config-next": "14.2.15",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.11",
+    "tsx": "^4.23.12",
     "typescript": "^5.6.2"
   }
 }

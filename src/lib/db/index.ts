@@ -62,6 +62,10 @@ export interface PublicEventFilters {
   sort?: 'upcoming' | 'newest' | 'date' | 'city';
 }
 
+interface OrganizationCreateOptions {
+  requireCloudSync?: boolean;
+}
+
 export const db = {
   events: {
     async findPublicEvents(filters: PublicEventFilters = {}): Promise<EventItem[]> {
@@ -134,6 +138,10 @@ export const db = {
       // Populate relations with fallback for custom worldwide cities/countries
       results = results.map((e) => ({
         ...e,
+        // Public queries must never expose private evidence metadata or URLs.
+        sources: e.sources
+          ?.filter((source) => source.is_public)
+          .map(({ evidence_file: _evidenceFile, ...source }) => source),
         category: memory.categories.find((c) => c.id === e.category_id),
         country: memory.countries.find((c) => c.id === e.country_id) || {
           id: e.country_id,
@@ -182,6 +190,10 @@ export const db = {
 
       return {
         ...event,
+        // Keep moderation evidence private even when an event itself is public.
+        sources: event.sources
+          ?.filter((source) => source.is_public)
+          .map(({ evidence_file: _evidenceFile, ...source }) => source),
         category: memory.categories.find((c) => c.id === event.category_id),
         country: memory.countries.find((c) => c.id === event.country_id),
         city: memory.cities.find((c) => c.id === event.city_id),
@@ -436,7 +448,10 @@ export const db = {
       return [...memory.organizations];
     },
 
-    async create(orgData: Omit<Organization, 'id' | 'created_at' | 'updated_at'>): Promise<Organization> {
+    async create(
+      orgData: Omit<Organization, 'id' | 'created_at' | 'updated_at'>,
+      options: OrganizationCreateOptions = {}
+    ): Promise<Organization> {
       const newOrg: Organization = {
         ...orgData,
         id: `org-${Date.now()}`,
@@ -444,8 +459,12 @@ export const db = {
         updated_at: new Date().toISOString(),
       };
       memory.organizations.unshift(newOrg);
-      // Persist globally
-      await CloudSync.saveOrganization(newOrg);
+      const persisted = await CloudSync.saveOrganization(newOrg);
+      if (options.requireCloudSync && !persisted) {
+        const index = memory.organizations.findIndex((organization) => organization.id === newOrg.id);
+        if (index !== -1) memory.organizations.splice(index, 1);
+        throw new Error('Organization registration could not be synchronized.');
+      }
       return newOrg;
     },
 

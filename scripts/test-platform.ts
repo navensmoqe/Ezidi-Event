@@ -179,7 +179,12 @@ async function runComprehensiveSecuritySuite() {
   console.log('\n🔹 11. Private Evidence Storage URL Expiration & Protection');
   const publicEvCheck = await db.events.findPublicBySlug('berlin-international-solidarity-rally-2026');
   assert(publicEvCheck !== null, 'Public event retrieved');
-  assert(publicEvCheck?.sources !== undefined, 'Public sources are isolated and visible, private evidence files require admin signature');
+  assert(
+    publicEvCheck?.sources?.length === 1 &&
+      publicEvCheck.sources[0].is_public === true &&
+      publicEvCheck.sources[0].evidence_file === undefined,
+    'Public queries expose only public sources and never moderation evidence files'
+  );
 
   // Test 12: Admin action without reason → rejected
   console.log('\n🔹 12. Admin Action Without Reason → Rejected Server-Side');
@@ -253,7 +258,12 @@ async function runComprehensiveSecuritySuite() {
     verification_status: 'verified',
   } as any, orgMemberContext);
   const reloadedOrgCheck = await db.organizations.findById(orgWithoutPerm.id);
-  assert(reloadedOrgCheck?.direct_publishing_enabled === false, 'Mass assignment defeated: Non-admin cannot alter direct_publishing_enabled flag');
+  assert(
+    massAssignRes.success === false &&
+      massAssignRes.error?.includes('Protected organization attributes') &&
+      reloadedOrgCheck?.direct_publishing_enabled === false,
+    'Mass assignment defeated: Protected publishing permissions are rejected server-side'
+  );
 
   // Test 20: Attack Scenario: Unauthorized Organization Suspension
   console.log('\n🔹 20. PENETRATION ATTACK: Unauthorized Organization Suspension Attempt');
@@ -267,4 +277,7 @@ async function runComprehensiveSecuritySuite() {
   if (failed > 0) process.exit(1);
 }
 
-runComprehensiveSecuritySuite().catch(console.error);
+runComprehensiveSecuritySuite().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
