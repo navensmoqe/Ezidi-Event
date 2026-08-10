@@ -7,26 +7,23 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export const metadata = {
-  title: 'طابور مراجعة الطلبات | Submissions Queue',
+  title: 'طابور مراجعة الطلبات الجديدة | Submissions & Registrations Queue',
 };
 
 export default async function AdminSubmissionsPage() {
   const allEvents = await db.events.findAllAdmin();
-  const pendingSubmissions = allEvents.filter((e) => e.status === 'pending');
+  const pendingEvents = allEvents.filter((e) => e.status === 'pending');
+
+  const allOrgs = await db.organizations.findAllAdmin();
+  const pendingOrgs = allOrgs.filter((o) => o.verification_status === 'pending');
 
   return (
     <div className="space-y-6">
-      <div className="border-b border-slate-800 pb-5">
-        <h1 className="text-2xl font-black text-white flex items-center gap-2.5">
-          <Inbox className="w-6 h-6 text-amber-400" />
-          <span>Incoming Submissions Moderation Queue</span>
-        </h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Review community and non-direct submissions. Approving an event immediately publishes it to the public directory.
-        </p>
-      </div>
-
-      <AdminSubmissionsClient initialSubmissions={pendingSubmissions} allEvents={allEvents} />
+      <AdminSubmissionsClient
+        initialEvents={pendingEvents}
+        allEvents={allEvents}
+        initialOrganizations={pendingOrgs}
+      />
     </div>
   );
 }
