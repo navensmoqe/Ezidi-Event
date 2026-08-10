@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useOrgLanguage } from '@/components/organization/OrgLanguageProvider';
 import { Organization, EventItem } from '@/types/database';
@@ -11,13 +11,75 @@ interface OrgEventsClientProps {
   events: EventItem[];
 }
 
-export function OrgEventsClient({ organization, events }: OrgEventsClientProps) {
+export function OrgEventsClient({ organization, events: initialEvents }: OrgEventsClientProps) {
   const { t, isRtl } = useOrgLanguage();
+  const [eventsList, setEventsList] = useState<EventItem[]>(initialEvents);
   const [search, setSearch] = useState('');
 
-  const filtered = events.filter((e) => {
+  // Sync with localStorage & API
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('ezidi_submitted_events') || '[]');
+      if (Array.isArray(stored) && stored.length > 0) {
+        setEventsList((prev) => {
+          const map = new Map<string, EventItem>();
+          // Add local events for this org
+          stored.forEach((e: EventItem) => {
+            if (
+              e &&
+              e.id &&
+              (e.organization_id === organization.id ||
+                e.organizer_name === organization.name ||
+                e.contact_email?.toLowerCase() === organization.email?.toLowerCase())
+            ) {
+              map.set(e.id, e);
+            }
+          });
+          prev.forEach((e) => {
+            if (e && e.id && !map.has(e.id)) {
+              map.set(e.id, e);
+            }
+          });
+          return Array.from(map.values());
+        });
+      }
+    } catch {}
+
+    fetch('/api/events')
+      .then((res) => res.json())
+      .then((data) => {
+        const events = Array.isArray(data) ? data : data?.events || [];
+        if (Array.isArray(events) && events.length > 0) {
+          const orgSpecific = events.filter(
+            (e: EventItem) =>
+              e.organization_id === organization.id ||
+              e.organizer_name === organization.name ||
+              e.contact_email?.toLowerCase() === organization.email?.toLowerCase()
+          );
+          if (orgSpecific.length > 0) {
+            setEventsList((prev) => {
+              const map = new Map<string, EventItem>();
+              orgSpecific.forEach((e: EventItem) => {
+                if (e && e.id) map.set(e.id, e);
+              });
+              prev.forEach((e) => {
+                if (e && e.id && !map.has(e.id)) map.set(e.id, e);
+              });
+              return Array.from(map.values());
+            });
+          }
+        }
+      })
+      .catch(() => {});
+  }, [organization]);
+
+  const filtered = eventsList.filter((e) => {
     const q = search.toLowerCase();
-    return e.title.toLowerCase().includes(q) || e.full_address.toLowerCase().includes(q);
+    return (
+      e.title?.toLowerCase().includes(q) ||
+      e.full_address?.toLowerCase().includes(q) ||
+      e.city_id?.toLowerCase().includes(q)
+    );
   });
 
   return (
@@ -98,15 +160,16 @@ export function OrgEventsClient({ organization, events }: OrgEventsClientProps) 
                       >
                         {event.status === 'published'
                           ? (isRtl ? '✓ منشور للعامة' : '✓ Published')
-                          : (isRtl ? '⏳ قيد المراجعة' : '⏳ Pending Review')}
+                          : (isRtl ? '⏳ قيد المراجعة' : '⏳ Pending')}
                       </span>
                     </td>
                     <td className={`py-3.5 px-4 ${isRtl ? 'text-left' : 'text-right'}`}>
                       <div className="flex items-center justify-end gap-2">
                         <Link
                           href={`/ar/events/${event.slug}`}
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white"
-                          title={isRtl ? 'معاينة في الموقع العام' : 'Preview on public site'}
+                          target="_blank"
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+                          title={isRtl ? 'معاينة في الموقع' : 'View on site'}
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
                         </Link>

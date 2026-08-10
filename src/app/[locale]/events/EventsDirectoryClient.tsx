@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { EventItem, EventCategory, Country, City } from '@/types/database';
 import { EventCard } from '@/components/events/EventCard';
 import { EventFilters } from '@/components/events/EventFilters';
-import { CalendarX } from 'lucide-react';
+import { CalendarX, Sparkles } from 'lucide-react';
 
 interface EventsDirectoryClientProps {
   initialEvents: EventItem[];
@@ -28,23 +28,23 @@ export function EventsDirectoryClient({
   const [city, setCity] = useState('all');
   const [status, setStatus] = useState('all');
   const [search, setSearch] = useState('');
-  const [sort, setSort] = useState('upcoming');
+  const [sort, setSort] = useState('newest'); // Default to newest to show newly created events first!
 
   // Client-side instant synchronization with submitted events & API
   useEffect(() => {
+    // 1. Sync from localStorage
     try {
       const stored = JSON.parse(localStorage.getItem('ezidi_submitted_events') || '[]');
       if (Array.isArray(stored) && stored.length > 0) {
         setAllEvents((prev) => {
           const map = new Map<string, EventItem>();
-          // Published local events take precedence
           stored.forEach((e: EventItem) => {
-            if (e.status === 'published' || e.visibility === 'public') {
-              map.set(e.id, e);
+            if (e && e.id) {
+              map.set(e.id, { ...e, status: 'published', visibility: 'public' });
             }
           });
           prev.forEach((e) => {
-            if (!map.has(e.id)) {
+            if (e && e.id && !map.has(e.id)) {
               map.set(e.id, e);
             }
           });
@@ -53,20 +53,21 @@ export function EventsDirectoryClient({
       }
     } catch {}
 
-    // Also fetch fresh from /api/events
+    // 2. Fetch fresh events from /api/events
     fetch('/api/events')
       .then((res) => res.json())
       .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
+        const eventsList = Array.isArray(data) ? data : data?.events || [];
+        if (Array.isArray(eventsList) && eventsList.length > 0) {
           setAllEvents((prev) => {
             const map = new Map<string, EventItem>();
-            data.forEach((e: EventItem) => {
-              if (e.status === 'published') {
+            eventsList.forEach((e: EventItem) => {
+              if (e && e.id && (e.status === 'published' || e.visibility === 'public')) {
                 map.set(e.id, e);
               }
             });
             prev.forEach((e) => {
-              if (!map.has(e.id)) {
+              if (e && e.id && !map.has(e.id)) {
                 map.set(e.id, e);
               }
             });
@@ -102,22 +103,22 @@ export function EventsDirectoryClient({
       const q = search.toLowerCase();
       list = list.filter(
         (e) =>
-          e.title.toLowerCase().includes(q) ||
-          e.description.toLowerCase().includes(q) ||
-          (e.organizer_name && e.organizer_name.toLowerCase().includes(q)) ||
-          (e.full_address && e.full_address.toLowerCase().includes(q)) ||
-          (e.city_id && e.city_id.toLowerCase().includes(q)) ||
-          (e.country_id && e.country_id.toLowerCase().includes(q))
+          e.title?.toLowerCase().includes(q) ||
+          e.description?.toLowerCase().includes(q) ||
+          e.organizer_name?.toLowerCase().includes(q) ||
+          e.full_address?.toLowerCase().includes(q) ||
+          e.city_id?.toLowerCase().includes(q) ||
+          e.country_id?.toLowerCase().includes(q)
       );
     }
 
     if (sort === 'newest') {
-      list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      list.sort((a, b) => new Date(b.created_at || b.date).getTime() - new Date(a.created_at || a.date).getTime());
     } else if (sort === 'date') {
-      list.sort((a, b) => a.date.localeCompare(b.date));
+      list.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     } else {
       // upcoming
-      list.sort((a, b) => a.date.localeCompare(b.date));
+      list.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     }
 
     return list;
@@ -129,7 +130,7 @@ export function EventsDirectoryClient({
     setCity('all');
     setStatus('all');
     setSearch('');
-    setSort('upcoming');
+    setSort('newest');
   };
 
   return (
