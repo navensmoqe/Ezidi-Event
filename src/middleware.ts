@@ -20,7 +20,7 @@ export default function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(`/organization${subpath}`, request.url));
   }
 
-  // 2. Protected route guards for /admin and /organization (Bypass next-intl completely)
+  // 2. Protected route guard for /admin
   if (pathname.startsWith('/admin')) {
     const isLogin = pathname.startsWith('/admin/login');
     if (!isLogin) {
@@ -28,10 +28,19 @@ export default function middleware(request: NextRequest) {
       if (!authSession) {
         return NextResponse.redirect(new URL('/admin/login', request.url));
       }
+      try {
+        const parsed = JSON.parse(authSession);
+        if (!['super_admin', 'admin', 'moderator', 'editor'].includes(parsed.role)) {
+          return NextResponse.redirect(new URL('/admin/login', request.url));
+        }
+      } catch {
+        return NextResponse.redirect(new URL('/admin/login', request.url));
+      }
     }
     return NextResponse.next();
   }
 
+  // 3. Protected route guard for /organization (Strict: Must have organization session)
   if (pathname.startsWith('/organization')) {
     const isLogin = pathname.startsWith('/organization/login');
     if (!isLogin) {
@@ -39,19 +48,25 @@ export default function middleware(request: NextRequest) {
       if (!authSession) {
         return NextResponse.redirect(new URL('/organization/login', request.url));
       }
+      try {
+        const parsed = JSON.parse(authSession);
+        const isOrgUser = parsed.organizationId || ['organization_owner', 'organization_admin', 'super_admin', 'admin'].includes(parsed.role);
+        if (!isOrgUser) {
+          return NextResponse.redirect(new URL('/organization/login', request.url));
+        }
+      } catch {
+        return NextResponse.redirect(new URL('/organization/login', request.url));
+      }
     }
     return NextResponse.next();
   }
 
-  // 3. Delegate to next-intl middleware for localized public routes
+  // 4. Delegate to next-intl middleware for localized public routes
   return intlMiddleware(request);
 }
 
 export const config = {
   matcher: [
-    // Match all pathnames except for
-    // - … if they start with `/api`, `/_next` or `/_vercel`
-    // - … the ones containing a dot (e.g. `favicon.ico`)
     '/((?!api|_next|_vercel|.*\\..*).*)',
   ],
 };

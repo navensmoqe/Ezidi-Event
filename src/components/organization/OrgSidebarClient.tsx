@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useOrgLanguage } from './OrgLanguageProvider';
 import { Organization } from '@/types/database';
+import { logoutAction } from '@/lib/actions/auth';
 import {
   LayoutDashboard,
   Calendar,
@@ -17,55 +18,22 @@ import {
   ShieldCheck,
   LogOut,
   Globe,
-  ChevronDown,
   Sparkles,
 } from 'lucide-react';
 
 interface OrgSidebarClientProps {
-  initialOrganizations: Organization[];
+  organization: Organization;
 }
 
-export function OrgSidebarClient({ initialOrganizations }: OrgSidebarClientProps) {
+export function OrgSidebarClient({ organization }: OrgSidebarClientProps) {
   const { lang, setLang, t, isRtl } = useOrgLanguage();
   const pathname = usePathname();
   const router = useRouter();
 
-  const [orgs, setOrgs] = useState<Organization[]>(initialOrganizations);
-  const [activeOrgId, setActiveOrgId] = useState<string>(
-    initialOrganizations[0]?.id || 'org-ezidi-world'
-  );
-
-  useEffect(() => {
-    const saved = localStorage.getItem('ezidi_active_org_id');
-    if (saved && orgs.some((o) => o.id === saved)) {
-      setActiveOrgId(saved);
-    } else if (orgs[0]) {
-      setActiveOrgId(orgs[0].id);
-    }
-  }, [orgs]);
-
-  // Fetch updated cloud organizations on mount
-  useEffect(() => {
-    async function loadCloudOrgs() {
-      try {
-        const res = await fetch('/api/organizations', { cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && Array.isArray(data.organizations)) {
-            setOrgs(data.organizations);
-          }
-        }
-      } catch {}
-    }
-    loadCloudOrgs();
-  }, []);
-
-  const activeOrg = orgs.find((o) => o.id === activeOrgId) || orgs[0];
-
-  const handleSelectOrg = (orgId: string) => {
-    setActiveOrgId(orgId);
-    localStorage.setItem('ezidi_active_org_id', orgId);
-    router.refresh();
+  const handleLogout = async () => {
+    await logoutAction();
+    localStorage.removeItem('ezidi_active_org_id');
+    router.push('/organization/login');
   };
 
   const navItems = [
@@ -121,51 +89,48 @@ export function OrgSidebarClient({ initialOrganizations }: OrgSidebarClientProps
           </button>
         </div>
 
-        {/* Active Organization Switcher Card */}
-        {activeOrg && (
-          <div className="p-3 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-slate-400 uppercase font-semibold">
-                {isRtl ? 'المنظمة الحالية:' : 'Active Organization:'}
-              </span>
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                {activeOrg.verification_status === 'verified'
-                  ? (isRtl ? '✓ موثقة' : '✓ Verified')
-                  : (isRtl ? 'قيد التدقيق' : 'Pending')}
-              </span>
-            </div>
+        {/* Authenticated Organization Identity Card (Isolated to logged-in org only) */}
+        <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-slate-400 uppercase font-semibold">
+              {isRtl ? 'حساب المنظمة:' : 'Organization Account:'}
+            </span>
+            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              {organization.verification_status === 'verified'
+                ? (isRtl ? '✓ موثقة رسمياً' : '✓ Verified')
+                : (isRtl ? '⏳ قيد التدقيق' : '⏳ Pending')}
+            </span>
+          </div>
 
-            <div className="relative">
-              <select
-                value={activeOrg.id}
-                onChange={(e) => handleSelectOrg(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-amber-300 font-bold focus:outline-none focus:border-amber-500 appearance-none cursor-pointer pr-6"
-              >
-                {orgs.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-2.5 pointer-events-none" />
+          <div className="flex items-center gap-2.5 pt-1">
+            <div className="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-amber-400 text-xs shrink-0">
+              {organization.name.substring(0, 2).toUpperCase()}
             </div>
-
-            <div className="flex items-center justify-between text-[10px] pt-1 border-t border-slate-800/80">
-              <span className="text-slate-400">{t('directPublishing')}:</span>
-              <span
-                className={`font-semibold ${
-                  activeOrg.direct_publishing_enabled
-                    ? 'text-emerald-400'
-                    : 'text-amber-400'
-                }`}
-              >
-                {activeOrg.direct_publishing_enabled
-                  ? (isRtl ? 'مفعّل ✓' : 'Active ✓')
-                  : (isRtl ? 'معطّل' : 'Disabled')}
+            <div className="overflow-hidden">
+              <span className="text-xs font-bold text-white block truncate" title={organization.name}>
+                {organization.name}
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono truncate block" title={organization.email}>
+                {organization.email}
               </span>
             </div>
           </div>
-        )}
+
+          <div className="flex items-center justify-between text-[10px] pt-2 border-t border-slate-800/80">
+            <span className="text-slate-400">{t('directPublishing')}:</span>
+            <span
+              className={`font-semibold ${
+                organization.direct_publishing_enabled
+                  ? 'text-emerald-400'
+                  : 'text-amber-400'
+              }`}
+            >
+              {organization.direct_publishing_enabled
+                ? (isRtl ? 'مفعّل ✓' : 'Active ✓')
+                : (isRtl ? 'معطّل' : 'Disabled')}
+            </span>
+          </div>
+        </div>
 
         {/* Nav List */}
         <nav className="space-y-1">
@@ -199,13 +164,13 @@ export function OrgSidebarClient({ initialOrganizations }: OrgSidebarClientProps
           <Globe className="w-4 h-4 text-amber-400" />
           <span>{t('publicWebsite')}</span>
         </Link>
-        <Link
-          href="/organization/login"
-          className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-amber-400 hover:bg-amber-950/30 transition-colors"
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-red-400 hover:bg-red-950/30 transition-colors"
         >
-          <Sparkles className="w-4 h-4" />
-          <span>{isRtl ? 'تبديل المنظمة / الدخول السريع' : 'Switch Org / Quick Access'}</span>
-        </Link>
+          <LogOut className="w-4 h-4" />
+          <span>{t('logout')}</span>
+        </button>
       </div>
     </aside>
   );

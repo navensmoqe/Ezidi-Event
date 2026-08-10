@@ -1,13 +1,17 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useOrgLanguage } from '@/components/organization/OrgLanguageProvider';
+import { Organization } from '@/types/database';
 import { updateOrganizationProfileAction } from '@/lib/actions/organizations';
 import { Settings, Lock, Bell, Shield, CheckCircle2, Save, KeyRound, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
-export function OrgSettingsClient() {
+interface OrgSettingsClientProps {
+  organization: Organization;
+}
+
+export function OrgSettingsClient({ organization }: OrgSettingsClientProps) {
   const { t, isRtl } = useOrgLanguage();
-  const [activeOrgId, setActiveOrgId] = useState<string>('');
   const [saved, setSaved] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -15,11 +19,6 @@ export function OrgSettingsClient() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    const savedId = localStorage.getItem('ezidi_active_org_id') || 'org-1';
-    setActiveOrgId(savedId);
-  }, []);
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,7 +35,7 @@ export function OrgSettingsClient() {
     }
 
     setLoading(true);
-    const res = await updateOrganizationProfileAction(activeOrgId, {
+    const res = await updateOrganizationProfileAction(organization.id, {
       password: newPassword,
     });
     setLoading(false);
@@ -66,8 +65,8 @@ export function OrgSettingsClient() {
         </h1>
         <p className="text-xs text-slate-400 mt-1">
           {isRtl
-            ? 'تعديل كلمة المرور الخاصة بالمنظمة، تخصيص تفضيلات التنبيهات، وإجراءات الأمان.'
-            : 'Manage organization password, notification preferences, and security.'}
+            ? `تعديل كلمة المرور وتفضيلات الإشعارات لمنظمة: "${organization.name}".`
+            : `Manage password and notification preferences for "${organization.name}".`}
         </p>
       </div>
 

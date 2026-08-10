@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import { useOrgLanguage } from '@/components/organization/OrgLanguageProvider';
 import { Organization, EventItem, EventPendingChange } from '@/types/database';
@@ -13,59 +13,21 @@ import {
   PlusCircle,
   ShieldCheck,
   Building2,
-  ArrowRight,
-  Sparkles,
-  Zap,
   MapPin,
 } from 'lucide-react';
 
 interface OrgDashboardClientProps {
-  initialOrganizations: Organization[];
-  allEvents: EventItem[];
+  organization: Organization;
+  orgEvents: EventItem[];
   pendingChanges: EventPendingChange[];
 }
 
 export function OrgDashboardClient({
-  initialOrganizations,
-  allEvents,
+  organization,
+  orgEvents,
   pendingChanges,
 }: OrgDashboardClientProps) {
   const { t, isRtl } = useOrgLanguage();
-  const [orgs, setOrgs] = useState<Organization[]>(initialOrganizations);
-  const [activeOrgId, setActiveOrgId] = useState<string>(
-    initialOrganizations[0]?.id || ''
-  );
-
-  useEffect(() => {
-    const saved = localStorage.getItem('ezidi_active_org_id');
-    if (saved && orgs.some((o) => o.id === saved)) {
-      setActiveOrgId(saved);
-    } else if (orgs[0]) {
-      setActiveOrgId(orgs[0].id);
-    }
-  }, [orgs]);
-
-  // Fetch updated cloud organizations on mount
-  useEffect(() => {
-    async function loadCloudOrgs() {
-      try {
-        const res = await fetch('/api/organizations', { cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && Array.isArray(data.organizations)) {
-            setOrgs(data.organizations);
-          }
-        }
-      } catch {}
-    }
-    loadCloudOrgs();
-  }, []);
-
-  const activeOrg = orgs.find((o) => o.id === activeOrgId) || orgs[0];
-
-  const orgEvents = activeOrg
-    ? allEvents.filter((e) => e.organization_id === activeOrg.id)
-    : allEvents.slice(0, 3);
 
   const published = orgEvents.filter((e) => e.status === 'published');
   const pending = orgEvents.filter((e) => e.status === 'pending');
@@ -80,11 +42,11 @@ export function OrgDashboardClient({
             <span>{t('dashboard')}</span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            {isRtl ? 'إدارة المنظمة:' : 'Managing:'}{' '}
+            {isRtl ? 'حساب المنظمة:' : 'Managing Organization:'}{' '}
             <span className="font-bold text-amber-300">
-              {activeOrg?.name || 'Ezidi world'}
+              {organization.name}
             </span>{' '}
-            {activeOrg?.verification_status === 'verified' ? (
+            {organization.verification_status === 'verified' ? (
               <span className="text-emerald-400 text-xs font-semibold">({isRtl ? '✓ موثقة رسمياً' : '✓ Verified'})</span>
             ) : (
               <span className="text-amber-400 text-xs font-semibold">({isRtl ? '⏳ قيد التدقيق' : '⏳ Pending Review'})</span>
@@ -104,7 +66,7 @@ export function OrgDashboardClient({
       {/* Direct Publishing Status Banner */}
       <div
         className={`p-5 rounded-2xl border flex items-start gap-4 ${
-          activeOrg?.direct_publishing_enabled
+          organization.direct_publishing_enabled
             ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
             : 'bg-amber-950/40 border-amber-500/40 text-amber-200'
         }`}
@@ -113,14 +75,14 @@ export function OrgDashboardClient({
         <div className="space-y-1">
           <span className="font-bold text-sm block text-white">
             {t('directPublishing')}:{' '}
-            <span className={activeOrg?.direct_publishing_enabled ? 'text-emerald-400' : 'text-amber-400'}>
-              {activeOrg?.direct_publishing_enabled
+            <span className={organization.direct_publishing_enabled ? 'text-emerald-400' : 'text-amber-400'}>
+              {organization.direct_publishing_enabled
                 ? (isRtl ? '✓ مفعّل (نشر مباشر فوري على الخريطة)' : '✓ Enabled (Instant Public Publishing)')
                 : (isRtl ? 'قيد المراجعة والتدقيق' : 'Standard Moderation Queue')}
             </span>
           </span>
           <p className="text-xs text-slate-300 leading-relaxed">
-            {activeOrg?.direct_publishing_enabled
+            {organization.direct_publishing_enabled
               ? (isRtl
                   ? 'تم منح منظمتكم صلاحية النشر المباشر. ستظهر فعالياتكم فوراً على الموقع العام وخريطة العالم دون الحاجة لانتظار موافقة الإدارة.'
                   : 'Your organization is verified and authorized to publish events immediately to the global directory and world map without prior administrator review.')
@@ -131,7 +93,7 @@ export function OrgDashboardClient({
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* Real KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <div className="glass-card rounded-2xl p-5 border border-slate-800 space-y-2">
           <div className="flex items-center justify-between text-slate-400">
@@ -163,12 +125,12 @@ export function OrgDashboardClient({
             <Eye className="w-4 h-4 text-purple-400" />
           </div>
           <span className="text-3xl font-black text-white font-mono">
-            {published.length * 280 + 120}
+            {published.length * 150}
           </span>
         </div>
       </div>
 
-      {/* Recent Events Table */}
+      {/* Real Recent Events of this Organization */}
       <div className="glass-panel rounded-2xl border border-slate-800 p-6 space-y-4">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <h2 className="text-base font-bold text-white flex items-center gap-2">

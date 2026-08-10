@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useOrgLanguage } from '@/components/organization/OrgLanguageProvider';
 import { EventCategory, Country, City, Organization } from '@/types/database';
@@ -25,35 +25,17 @@ interface OrgAddEventClientFormProps {
   categories: EventCategory[];
   countries: Country[];
   cities: City[];
-  organizations: Organization[];
+  organization: Organization;
 }
 
 export function OrgAddEventClientForm({
   categories,
   countries,
   cities,
-  organizations,
+  organization,
 }: OrgAddEventClientFormProps) {
   const router = useRouter();
   const { t, isRtl } = useOrgLanguage();
-
-  const [activeOrgId, setActiveOrgId] = useState<string>(organizations[0]?.id || '');
-
-  useEffect(() => {
-    const saved = localStorage.getItem('ezidi_active_org_id');
-    if (saved && organizations.some((o) => o.id === saved)) {
-      setActiveOrgId(saved);
-      const matchedOrg = organizations.find((o) => o.id === saved);
-      if (matchedOrg) {
-        setFormData((prev) => ({
-          ...prev,
-          organization_id: matchedOrg.id,
-          organizer_name: matchedOrg.name,
-          contact_email: matchedOrg.email,
-        }));
-      }
-    }
-  }, [organizations]);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -66,16 +48,16 @@ export function OrgAddEventClientForm({
     timezone: 'Europe/Berlin',
     country_id: countries[0]?.id || '',
     city_id: cities[0]?.id || '',
-    full_address: 'Berlin, Germany',
-    latitude: 52.5163,
-    longitude: 13.3777,
-    organization_id: organizations[0]?.id || '',
-    organizer_name: organizations[0]?.name || '',
+    full_address: organization.full_address || 'Berlin, Germany',
+    latitude: organization.latitude || 52.5163,
+    longitude: organization.longitude || 13.3777,
+    organization_id: organization.id,
+    organizer_name: organization.name,
     poster_url: '',
     source_url: '',
-    contact_email: organizations[0]?.email || '',
-    contact_phone: '',
-    official_website: organizations[0]?.website || '',
+    contact_email: organization.email,
+    contact_phone: organization.phone || '',
+    official_website: organization.website || '',
   });
 
   const [loading, setLoading] = useState(false);
@@ -143,6 +125,8 @@ export function OrgAddEventClientForm({
 
     const submissionData = {
       ...formData,
+      organization_id: organization.id,
+      organizer_name: organization.name,
       city_id: isCustomCity && customCityName ? `custom:${customCityName}` : formData.city_id,
     };
 
@@ -222,18 +206,6 @@ export function OrgAddEventClientForm({
 
   return (
     <form onSubmit={handleSubmit} className="glass-panel rounded-3xl p-6 sm:p-10 border border-slate-800 space-y-8">
-      <div className="border-b border-slate-800 pb-4">
-        <h1 className="text-2xl font-black text-white flex items-center gap-2">
-          <PlusCircle className="w-6 h-6 text-amber-400" />
-          <span>{isRtl ? 'إضافة فعالية جديدة باسم المنظمة' : 'Publish New Event'}</span>
-        </h1>
-        <p className="text-xs text-slate-400 mt-1">
-          {isRtl
-            ? 'املأ بيانات الفعالية لنشرها مباشرة أو إرسالها للمراجعة.'
-            : 'Fill in event details to publish directly or submit to the review queue.'}
-        </p>
-      </div>
-
       {error && (
         <div className="p-4 rounded-xl bg-red-950/80 border border-red-800 text-red-300 text-sm flex items-center gap-3">
           <AlertCircle className="w-5 h-5 shrink-0" />
@@ -282,27 +254,11 @@ export function OrgAddEventClientForm({
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              {isRtl ? 'المنظمة المنظمة للفعالية *' : 'Publishing Organization *'}
+              {isRtl ? 'المنظمة الناشرة' : 'Publishing Organization'}
             </label>
-            <select
-              value={formData.organization_id}
-              onChange={(e) => {
-                const org = organizations.find((o) => o.id === e.target.value);
-                setFormData({
-                  ...formData,
-                  organization_id: e.target.value,
-                  organizer_name: org?.name || '',
-                  contact_email: org?.email || formData.contact_email,
-                });
-              }}
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-amber-300 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            >
-              {organizations.map((org) => (
-                <option key={org.id} value={org.id}>
-                  {org.name}
-                </option>
-              ))}
-            </select>
+            <div className="px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-amber-300 font-bold text-sm">
+              {organization.name}
+            </div>
           </div>
 
           <div className="sm:col-span-2">

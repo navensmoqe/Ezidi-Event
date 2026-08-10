@@ -1,38 +1,21 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { useOrgLanguage } from '@/components/organization/OrgLanguageProvider';
 import { Organization, EventItem } from '@/types/database';
 import { PlusCircle, Calendar, Edit, ExternalLink, Trash2, MapPin, Clock, ShieldCheck, Search } from 'lucide-react';
 
 interface OrgEventsClientProps {
-  initialOrganizations: Organization[];
-  allEvents: EventItem[];
+  organization: Organization;
+  events: EventItem[];
 }
 
-export function OrgEventsClient({ initialOrganizations, allEvents }: OrgEventsClientProps) {
+export function OrgEventsClient({ organization, events }: OrgEventsClientProps) {
   const { t, isRtl } = useOrgLanguage();
-  const [orgs, setOrgs] = useState<Organization[]>(initialOrganizations);
-  const [activeOrgId, setActiveOrgId] = useState<string>(initialOrganizations[0]?.id || '');
   const [search, setSearch] = useState('');
 
-  useEffect(() => {
-    const saved = localStorage.getItem('ezidi_active_org_id');
-    if (saved && orgs.some((o) => o.id === saved)) {
-      setActiveOrgId(saved);
-    } else if (orgs[0]) {
-      setActiveOrgId(orgs[0].id);
-    }
-  }, [orgs]);
-
-  const activeOrg = orgs.find((o) => o.id === activeOrgId) || orgs[0];
-
-  const orgEvents = activeOrg
-    ? allEvents.filter((e) => e.organization_id === activeOrg.id)
-    : allEvents;
-
-  const filtered = orgEvents.filter((e) => {
+  const filtered = events.filter((e) => {
     const q = search.toLowerCase();
     return e.title.toLowerCase().includes(q) || e.full_address.toLowerCase().includes(q);
   });
@@ -47,8 +30,8 @@ export function OrgEventsClient({ initialOrganizations, allEvents }: OrgEventsCl
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
             {isRtl
-              ? 'إنشاء ومتابعة وتعديل فعاليات المنظمة المنشورة وقيد المراجعة.'
-              : "Create, update, cancel, and manage your organization's events."}
+              ? `عرض وإدارة فعاليات منظمة "${organization.name}" المعتمدة.`
+              : `Manage events published by "${organization.name}".`}
           </p>
         </div>
 
@@ -92,7 +75,7 @@ export function OrgEventsClient({ initialOrganizations, allEvents }: OrgEventsCl
               {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-8 text-center text-slate-500 text-xs">
-                    {isRtl ? 'لا توجد فعاليات مطابقة.' : 'No events found.'}
+                    {isRtl ? 'لم تنشر هذه المنظمة أي فعاليات بعد.' : 'No events found for this organization.'}
                   </td>
                 </tr>
               ) : (

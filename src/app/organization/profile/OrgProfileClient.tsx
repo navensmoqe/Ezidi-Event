@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useOrgLanguage } from '@/components/organization/OrgLanguageProvider';
 import { Organization } from '@/types/database';
 import { updateOrganizationProfileAction } from '@/lib/actions/organizations';
@@ -21,46 +21,29 @@ import {
 } from 'lucide-react';
 
 interface OrgProfileClientProps {
-  initialOrganizations: Organization[];
+  organization: Organization;
 }
 
-export function OrgProfileClient({ initialOrganizations }: OrgProfileClientProps) {
+export function OrgProfileClient({ organization }: OrgProfileClientProps) {
   const { t, isRtl } = useOrgLanguage();
-  const [orgs, setOrgs] = useState<Organization[]>(initialOrganizations);
-  const [activeOrgId, setActiveOrgId] = useState<string>(initialOrganizations[0]?.id || '');
-  const [formData, setFormData] = useState<Partial<Organization>>({});
+  const [formData, setFormData] = useState<Partial<Organization>>({
+    name: organization.name || '',
+    name_ar: organization.name_ar || '',
+    password: organization.password || 'Ezidi@2026',
+    description: organization.description || '',
+    description_ar: organization.description_ar || '',
+    email: organization.email || '',
+    phone: organization.phone || '',
+    website: organization.website || '',
+    logo: organization.logo || '',
+    cover_image: organization.cover_image || '',
+    full_address: organization.full_address || '',
+  });
+
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const saved = localStorage.getItem('ezidi_active_org_id');
-    if (saved && orgs.some((o) => o.id === saved)) {
-      setActiveOrgId(saved);
-    } else if (orgs[0]) {
-      setActiveOrgId(orgs[0].id);
-    }
-  }, [orgs]);
-
-  useEffect(() => {
-    const active = orgs.find((o) => o.id === activeOrgId) || orgs[0];
-    if (active) {
-      setFormData({
-        name: active.name || '',
-        name_ar: active.name_ar || '',
-        password: active.password || 'Ezidi@2026',
-        description: active.description || '',
-        description_ar: active.description_ar || '',
-        email: active.email || '',
-        phone: active.phone || '',
-        website: active.website || '',
-        logo: active.logo || '',
-        cover_image: active.cover_image || '',
-        full_address: active.full_address || '',
-      });
-    }
-  }, [activeOrgId, orgs]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,18 +51,11 @@ export function OrgProfileClient({ initialOrganizations }: OrgProfileClientProps
     setSuccess(false);
     setError(null);
 
-    const active = orgs.find((o) => o.id === activeOrgId) || orgs[0];
-    if (!active) return;
-
-    const res = await updateOrganizationProfileAction(active.id, formData);
+    const res = await updateOrganizationProfileAction(organization.id, formData);
 
     setLoading(false);
-    if (res.success && res.organization) {
+    if (res.success) {
       setSuccess(true);
-      // Update local state
-      setOrgs((prev) =>
-        prev.map((o) => (o.id === active.id ? { ...o, ...res.organization } : o))
-      );
       setTimeout(() => setSuccess(false), 5000);
     } else {
       setError(res.error || (isRtl ? 'فشل حفظ التعديلات.' : 'Failed to update profile.'));
@@ -95,8 +71,8 @@ export function OrgProfileClient({ initialOrganizations }: OrgProfileClientProps
         </h1>
         <p className="text-xs text-slate-400 mt-1">
           {isRtl
-            ? 'يمكن لصاحب المنظمة تعديل الاسم، كلمة المرور، البريد الرسمي، الشعار، وصورة الغلاف والمعلومات العامة.'
-            : 'Update organization name, password, email, logo, cover image, and contact details.'}
+            ? `تعديل الاسم، كلمة المرور، البريد، الشعار وصورة الغلاف لمنظمة: "${organization.name}".`
+            : `Update name, password, email, logo, and cover image for "${organization.name}".`}
         </p>
       </div>
 
