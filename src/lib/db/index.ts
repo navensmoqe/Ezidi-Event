@@ -349,6 +349,15 @@ export const db = {
       for (const org of cloudOrgs) {
         if (!existingIds.has(org.id)) {
           memory.organizations.unshift(org);
+        } else {
+          const idx = memory.organizations.findIndex((o) => o.id === org.id);
+          if (idx !== -1) {
+            const memTime = new Date(memory.organizations[idx].updated_at || 0).getTime();
+            const cloudTime = new Date(org.updated_at || 0).getTime();
+            if (cloudTime > memTime) {
+              memory.organizations[idx] = { ...memory.organizations[idx], ...org };
+            }
+          }
         }
       }
       return memory.organizations.filter(
