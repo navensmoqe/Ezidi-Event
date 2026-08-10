@@ -1,14 +1,57 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useOrgLanguage } from '@/components/organization/OrgLanguageProvider';
-import { Settings, Lock, Bell, Shield, CheckCircle2, Save } from 'lucide-react';
+import { updateOrganizationProfileAction } from '@/lib/actions/organizations';
+import { Settings, Lock, Bell, Shield, CheckCircle2, Save, KeyRound, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 export function OrgSettingsClient() {
   const { t, isRtl } = useOrgLanguage();
+  const [activeOrgId, setActiveOrgId] = useState<string>('');
   const [saved, setSaved] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSave = (e: React.FormEvent) => {
+  useEffect(() => {
+    const savedId = localStorage.getItem('ezidi_active_org_id') || 'org-1';
+    setActiveOrgId(savedId);
+  }, []);
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(false);
+
+    if (newPassword.length < 4) {
+      setPasswordError(isRtl ? 'كلمة المرور يجب أن تكون 4 خانات على الأقل.' : 'Password must be at least 4 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError(isRtl ? 'كلمتا المرور غير متطابقتين.' : 'Passwords do not match.');
+      return;
+    }
+
+    setLoading(true);
+    const res = await updateOrganizationProfileAction(activeOrgId, {
+      password: newPassword,
+    });
+    setLoading(false);
+
+    if (res.success) {
+      setPasswordSuccess(true);
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => setPasswordSuccess(false), 5000);
+    } else {
+      setPasswordError(res.error || (isRtl ? 'تعذر تغيير كلمة المرور.' : 'Failed to update password.'));
+    }
+  };
+
+  const handleSaveNotifications = (e: React.FormEvent) => {
     e.preventDefault();
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
@@ -23,8 +66,8 @@ export function OrgSettingsClient() {
         </h1>
         <p className="text-xs text-slate-400 mt-1">
           {isRtl
-            ? 'تخصيص تفضيلات التنبيهات، إشعارات المراجعة الإدارية، وإجراءات الأمان.'
-            : 'Manage your organization notification preferences and security credentials.'}
+            ? 'تعديل كلمة المرور الخاصة بالمنظمة، تخصيص تفضيلات التنبيهات، وإجراءات الأمان.'
+            : 'Manage organization password, notification preferences, and security.'}
         </p>
       </div>
 
@@ -35,7 +78,80 @@ export function OrgSettingsClient() {
         </div>
       )}
 
-      <form onSubmit={handleSave} className="space-y-6">
+      {/* 1. Dedicated Change Password Box */}
+      <div className="glass-panel rounded-3xl p-6 sm:p-8 border border-slate-800 space-y-5">
+        <div className="flex items-center gap-2 text-amber-400 border-b border-slate-800 pb-3">
+          <KeyRound className="w-5 h-5" />
+          <h3 className="text-sm font-bold text-white">
+            {isRtl ? 'تغيير كلمة المرور الخاصة ببوابة المنظمة' : 'Change Portal Password'}
+          </h3>
+        </div>
+
+        {passwordSuccess && (
+          <div className="p-3.5 rounded-xl bg-emerald-950/90 border border-emerald-500 text-emerald-200 text-xs font-bold flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{isRtl ? '✓ تم تحديث كلمة المرور بنجاح! يمكنك الآن الدخول بكلمة السر الجديدة.' : '✓ Password changed successfully!'}</span>
+          </div>
+        )}
+
+        {passwordError && (
+          <div className="p-3.5 rounded-xl bg-red-950/80 border border-red-800 text-red-300 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+            <span>{passwordError}</span>
+          </div>
+        )}
+
+        <form onSubmit={handlePasswordChange} className="space-y-4 max-w-md">
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              {isRtl ? 'كلمة المرور الجديدة *' : 'New Password *'}
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="••••••••••••"
+                className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs font-mono focus:outline-none focus:border-amber-500"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className={`absolute top-1/2 -translate-y-1/2 text-slate-400 hover:text-white ${isRtl ? 'left-3' : 'right-3'}`}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              {isRtl ? 'تأكيد كلمة المرور الجديدة *' : 'Confirm New Password *'}
+            </label>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              required
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="••••••••••••"
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs font-mono focus:outline-none focus:border-amber-500"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md transition-all flex items-center gap-2"
+          >
+            <Lock className="w-4 h-4" />
+            <span>{loading ? (isRtl ? 'جاري التحديث...' : 'Updating...') : (isRtl ? 'تحديث كلمة المرور' : 'Update Password')}</span>
+          </button>
+        </form>
+      </div>
+
+      {/* 2. Notifications Form */}
+      <form onSubmit={handleSaveNotifications} className="space-y-6">
         <div className="glass-panel rounded-3xl p-6 sm:p-8 border border-slate-800 space-y-6">
           <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-3">
             <Bell className="w-4 h-4 text-amber-400" />
@@ -71,33 +187,16 @@ export function OrgSettingsClient() {
               </div>
             </label>
           </div>
-        </div>
 
-        <div className="glass-panel rounded-3xl p-6 sm:p-8 border border-slate-800 space-y-6">
-          <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-3">
-            <Shield className="w-4 h-4 text-amber-400" />
-            <span>{isRtl ? 'أمان المنظمة والتحقق بخطوتين' : 'Security & Verification'}</span>
-          </h3>
-
-          <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-900 border border-slate-800">
-            <div>
-              <span className="text-sm font-bold text-white block">{isRtl ? 'حالة التوثيق الرسمي' : 'Official Verification Status'}</span>
-              <span className="text-xs text-slate-400">{isRtl ? 'المنظمة موثقة ومعتمدة من الإدارة' : 'Organization is verified and active'}</span>
-            </div>
-            <span className="px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 text-xs font-bold border border-emerald-800">
-              {isRtl ? '✓ موثقة' : '✓ Verified'}
-            </span>
+          <div className="flex justify-end pt-2">
+            <button
+              type="submit"
+              className="px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs shadow-md flex items-center gap-2"
+            >
+              <Save className="w-4 h-4" />
+              <span>{isRtl ? 'حفظ تفضيلات الإشعارات' : 'Save Preferences'}</span>
+            </button>
           </div>
-        </div>
-
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs sm:text-sm shadow-md flex items-center gap-2"
-          >
-            <Save className="w-4 h-4" />
-            <span>{isRtl ? 'حفظ الإعدادات' : 'Save Settings'}</span>
-          </button>
         </div>
       </form>
     </div>

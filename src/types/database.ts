@@ -76,6 +76,7 @@ export interface Organization {
   id: string;
   name: string;
   slug: string;
+  password?: string | null;
   logo?: string | null;
   cover_image?: string | null;
   description: string;

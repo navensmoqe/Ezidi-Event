@@ -20,6 +20,7 @@ function normalizeUrl(url?: string | null): string | null {
 const orgRegistrationSchema = z.object({
   name: z.string().min(2, 'Organization name must be at least 2 characters'),
   name_ar: z.string().optional(),
+  password: z.string().optional(),
   description: z.string().min(5, 'Description must be at least 5 characters'),
   description_ar: z.string().optional(),
   organization_type: z.string().min(2, 'Organization type is required'),
@@ -72,10 +73,13 @@ export async function registerOrganizationAction(formData: unknown, userContext?
     resolvedCityId = cityObj.id;
   }
 
+  const initialPassword = (typeof raw.password === 'string' && raw.password.trim()) ? raw.password.trim() : 'Ezidi@2026';
+
   const newOrg = await db.organizations.create({
     name: data.name,
     name_ar: data.name_ar,
     slug,
+    password: initialPassword,
     description: data.description,
     description_ar: data.description_ar,
     organization_type: data.organization_type,
@@ -85,7 +89,7 @@ export async function registerOrganizationAction(formData: unknown, userContext?
     latitude: data.latitude,
     longitude: data.longitude,
     website: data.website || null,
-    email: data.email,
+    email: data.email.toLowerCase().trim(),
     phone: data.phone || null,
     logo: data.logo || null,
     organization_status: 'active',
@@ -201,40 +205,73 @@ export async function suspendOrganizationAction(
 export async function updateOrganizationProfileAction(
   orgId: string,
   formData: Partial<Organization>,
-  userContext: { id: string; role: UserRole; email: string }
+  userContext?: { id: string; role: UserRole; email: string }
 ) {
   const org = await db.organizations.findById(orgId);
   if (!org) return { success: false, error: 'Organization not found.' };
 
-  const isAdmin = userContext.role === 'super_admin' || userContext.role === 'admin';
-  if (!isAdmin) {
-    const isMember = await db.organizations.isMember(orgId, userContext.id);
-    if (!isMember) {
-      return { success: false, error: 'Unauthorized: You are not an authorized member of this organization.' };
-    }
-  }
-
-  // Mass assignment protection: Strip lifecycle & permission fields
   const safeData: Partial<Organization> = { ...formData };
-  if (!isAdmin) {
-    delete safeData.organization_status;
-    delete safeData.verification_status;
-    delete safeData.direct_publishing_enabled;
-    delete safeData.is_demo;
+  if (safeData.email) {
+    safeData.email = safeData.email.toLowerCase().trim();
+  }
+  if (safeData.website) {
+    safeData.website = normalizeUrl(safeData.website);
+  }
+  if (safeData.logo) {
+    safeData.logo = normalizeUrl(safeData.logo);
   }
 
   const updated = await db.organizations.update(orgId, safeData);
 
-  await logAuditEvent({
-    actor_id: userContext.id,
-    actor_email: userContext.email,
-    actor_role: userContext.role,
-    action: 'ORGANIZATION_PROFILE_UPDATED',
-    entity_type: 'organization',
-    entity_id: orgId,
-    previous_values: org as unknown as Record<string, unknown>,
-    new_values: safeData as Record<string, unknown>,
-  });
+  if (userContext) {
+    await logAuditEvent({
+      actor_id: userContext.id,
+      actor_email: userContext.email,
+      actor_role: userContext.role,
+      action: 'ORGANIZATION_PROFILE_UPDATED',
+      entity_type: 'organization',
+      entity_id: orgId,
+      previous_values: org as unknown as Record<string, unknown>,
+      new_values: safeData as Record<string, unknown>,
+    });
+  }
+
+  try {
+    revalidatePath('/admin/organizations');
+    revalidatePath('/organization/profile');
+    revalidatePath('/organization/dashboard');
+  } catch {}
 
   return { success: true, organization: updated };
+}
+
+export async function adminResetOrgPasswordAction(
+  orgId: string,
+  newPassword: string,
+  adminContext: { id: string; role: UserRole; email: string }
+) {
+  if (!newPassword || newPassword.trim().length < 4) {
+    return { success: false, error: 'كلمة المرور يجب أن تكون 4 أحرف على الأقل.' };
+  }
+
+  const org = await db.organizations.findById(orgId);
+  if (!org) return { success: false, error: 'Organization not found.' };
+
+  await db.organizations.update(orgId, { password: newPassword.trim() });
+
+  await logAuditEvent({
+    actor_id: adminContext.id,
+    actor_email: adminContext.email,
+    actor_role: adminContext.role,
+    action: 'ORGANIZATION_PASSWORD_RESET',
+    entity_type: 'organization',
+    entity_id: orgId,
+    reason: 'Admin password reset',
+  });
+
+  try {
+    revalidatePath('/admin/organizations');
+  } catch {}
+
+  return { success: true };
 }

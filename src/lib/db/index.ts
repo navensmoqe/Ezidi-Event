@@ -338,6 +338,19 @@ export const db = {
       return org || null;
     },
 
+    async findByEmail(email: string): Promise<Organization | null> {
+      const em = email.toLowerCase().trim();
+      let org = memory.organizations.find((o) => o.email?.toLowerCase().trim() === em);
+      if (!org) {
+        const cloudOrgs = await CloudSync.getOrganizations();
+        org = cloudOrgs.find((o) => o.email?.toLowerCase().trim() === em);
+        if (org && !memory.organizations.some((o) => o.id === org?.id)) {
+          memory.organizations.unshift(org);
+        }
+      }
+      return org || null;
+    },
+
     async findAllAdmin(): Promise<Organization[]> {
       const cloudOrgs = await CloudSync.getOrganizations();
       const existingIds = new Set(memory.organizations.map((o) => o.id));
