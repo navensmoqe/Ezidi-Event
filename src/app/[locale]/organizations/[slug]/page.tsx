@@ -2,8 +2,8 @@ import React from 'react';
 import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import { db } from '@/lib/db';
-import { EventCard } from '@/components/events/EventCard';
 import { generateGoogleMapsUrl } from '@/lib/maps/google-maps';
+import { OrgPublicEventsClient } from '@/components/organizations/OrgPublicEventsClient';
 import {
   Building2,
   ShieldCheck,
@@ -14,6 +14,9 @@ import {
   Calendar,
   ExternalLink,
 } from 'lucide-react';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export async function generateMetadata({
   params: { slug },
@@ -41,9 +44,6 @@ export default async function OrganizationProfilePage({
 
   // Security Rule: Retrieve only published public events for this organization
   const allEvents = await db.events.findPublicEvents({ organization: org.id });
-  const today = new Date().toISOString().split('T')[0];
-  const upcomingEvents = allEvents.filter((e) => e.date >= today);
-  const pastEvents = allEvents.filter((e) => e.date < today);
 
   const googleMapsUrl = generateGoogleMapsUrl(org.latitude, org.longitude);
 
@@ -99,39 +99,38 @@ export default async function OrganizationProfilePage({
             </div>
           </div>
 
-          {/* Quick Contact Buttons */}
-          <div className="flex flex-wrap items-center gap-3">
+          {/* Contact buttons */}
+          <div className="flex items-center gap-3 self-start md:self-auto">
             {org.website && (
               <a
                 href={org.website}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-semibold border border-slate-700 flex items-center gap-1.5 transition-colors"
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white border border-slate-700 flex items-center gap-2 transition-colors"
               >
-                <Globe className="w-3.5 h-3.5" />
-                <span>Official Website</span>
-                <ExternalLink className="w-3 h-3" />
+                <Globe className="w-4 h-4 text-amber-400" />
+                <span>Website</span>
+                <ExternalLink className="w-3 h-3 text-slate-400" />
               </a>
             )}
-            {org.email && (
-              <a
-                href={`mailto:${org.email}`}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 flex items-center gap-1.5 transition-colors"
-              >
-                <Mail className="w-3.5 h-3.5" />
-                <span>Contact Email</span>
-              </a>
-            )}
+            <a
+              href={`mailto:${org.email}`}
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white border border-slate-700 flex items-center gap-2 transition-colors"
+            >
+              <Mail className="w-4 h-4 text-amber-400" />
+              <span>Contact Email</span>
+            </a>
           </div>
         </div>
       </div>
 
-      {/* Overview & Address */}
+      {/* Description & Details Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 glass-panel rounded-3xl p-6 sm:p-8 border border-slate-800 space-y-4">
-          <h2 className="text-lg font-bold text-white uppercase tracking-wider">
-            About Organization
-          </h2>
+          <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-amber-400" />
+            <span>About Organization</span>
+          </h3>
           <p className="text-sm sm:text-base text-slate-300 leading-relaxed whitespace-pre-line">
             {org.description}
           </p>
@@ -166,47 +165,11 @@ export default async function OrganizationProfilePage({
         </div>
       </div>
 
-      {/* Events by this organization */}
-      <div className="space-y-6">
-        <div className="border-b border-slate-800 pb-3">
-          <h2 className="text-2xl font-black text-white flex items-center gap-2">
-            <Calendar className="w-6 h-6 text-amber-400" />
-            <span>Events by {org.name}</span>
-          </h2>
-        </div>
-
-        {upcomingEvents.length > 0 && (
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-amber-400">
-              Upcoming Events ({upcomingEvents.length})
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {upcomingEvents.map((event) => (
-                <EventCard key={event.id} event={event} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {pastEvents.length > 0 && (
-          <div className="space-y-4 pt-6">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">
-              Past & Historical Events ({pastEvents.length})
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 opacity-80 hover:opacity-100 transition-opacity">
-              {pastEvents.map((event) => (
-                <EventCard key={event.id} event={event} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {allEvents.length === 0 && (
-          <div className="glass-panel rounded-2xl p-8 text-center text-sm text-slate-400 border border-slate-800">
-            No published public events currently listed for this organization.
-          </div>
-        )}
-      </div>
+      {/* Events by this organization - Real-Time Synchronized */}
+      <OrgPublicEventsClient
+        organization={org}
+        initialEvents={allEvents}
+      />
     </div>
   );
 }

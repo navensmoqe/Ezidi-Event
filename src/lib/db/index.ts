@@ -93,7 +93,12 @@ export const db = {
       }
 
       if (filters.organization && filters.organization !== 'all') {
-        results = results.filter((e) => e.organization_id === filters.organization);
+        const orgFilter = filters.organization.toLowerCase();
+        results = results.filter(
+          (e) =>
+            e.organization_id === filters.organization ||
+            (e.organizer_name && e.organizer_name.toLowerCase() === orgFilter)
+        );
       }
 
       if (filters.status && filters.status !== 'all') {
