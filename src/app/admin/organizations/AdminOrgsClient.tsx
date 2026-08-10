@@ -49,7 +49,21 @@ export function AdminOrgsClient({ initialOrganizations }: AdminOrgsClientProps) 
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.organizations)) {
-          setOrgs(data.organizations);
+          let verifiedLocal: string[] = [];
+          try {
+            verifiedLocal = JSON.parse(localStorage.getItem('ezidi_verified_org_ids') || '[]');
+          } catch {}
+          const merged = data.organizations.map((org: Organization) => {
+            if (verifiedLocal.includes(org.id)) {
+              return {
+                ...org,
+                verification_status: 'verified' as const,
+                direct_publishing_enabled: true,
+              };
+            }
+            return org;
+          });
+          setOrgs(merged);
         }
       }
     } catch {}
@@ -124,8 +138,15 @@ export function AdminOrgsClient({ initialOrganizations }: AdminOrgsClientProps) 
   const handleVerify = async (orgId: string) => {
     const res = await verifyOrganizationAction(orgId, 'Verified via administrator approval', adminContext);
     if (res.success) {
+      try {
+        const stored = JSON.parse(localStorage.getItem('ezidi_verified_org_ids') || '[]');
+        if (!stored.includes(orgId)) {
+          stored.push(orgId);
+          localStorage.setItem('ezidi_verified_org_ids', JSON.stringify(stored));
+        }
+      } catch {}
       setOrgs((prev) =>
-        prev.map((o) => (o.id === orgId ? { ...o, verification_status: 'verified' } : o))
+        prev.map((o) => (o.id === orgId ? { ...o, verification_status: 'verified', direct_publishing_enabled: true } : o))
       );
     }
   };

@@ -413,10 +413,14 @@ export const db = {
         if (!existingIds.has(org.id)) {
           memory.organizations.unshift(org);
         } else {
-          // Sync any status updates
+          // Sync from cloud ONLY if cloud timestamp is newer than memory timestamp
           const idx = memory.organizations.findIndex((o) => o.id === org.id);
           if (idx !== -1) {
-            memory.organizations[idx] = { ...memory.organizations[idx], ...org };
+            const memTime = new Date(memory.organizations[idx].updated_at || 0).getTime();
+            const cloudTime = new Date(org.updated_at || 0).getTime();
+            if (cloudTime > memTime) {
+              memory.organizations[idx] = { ...memory.organizations[idx], ...org };
+            }
           }
         }
       }
