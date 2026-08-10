@@ -15,15 +15,20 @@ import {
   UploadCloud,
   CheckCircle2,
   AlertCircle,
+  Sparkles,
+  ArrowRight,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface OrgRegisterClientFormProps {
   countries: Country[];
   cities: City[];
+  locale?: string;
 }
 
-export function OrgRegisterClientForm({ countries, cities }: OrgRegisterClientFormProps) {
+export function OrgRegisterClientForm({ countries, cities, locale = 'ar' }: OrgRegisterClientFormProps) {
   const router = useRouter();
+  const isAr = locale === 'ar';
 
   const [formData, setFormData] = useState({
     name: '',
@@ -33,7 +38,7 @@ export function OrgRegisterClientForm({ countries, cities }: OrgRegisterClientFo
     organization_type: 'Human Rights NGO',
     country_id: countries[0]?.id || '',
     city_id: cities[0]?.id || '',
-    full_address: 'Pariser Platz 1, 10117 Berlin, Germany',
+    full_address: 'Berlin, Germany',
     latitude: 52.5163,
     longitude: 13.3777,
     website: '',
@@ -112,7 +117,7 @@ export function OrgRegisterClientForm({ countries, cities }: OrgRegisterClientFo
     setLoading(false);
 
     if (!res.success) {
-      setError(res.error || 'Failed to submit registration.');
+      setError(res.error || (isAr ? 'تعذر إرسال طلب التسجيل. يرجى مراجعة البيانات.' : 'Failed to submit registration.'));
     } else if (res.organization) {
       setSuccessOrg(res.organization);
       try {
@@ -120,6 +125,7 @@ export function OrgRegisterClientForm({ countries, cities }: OrgRegisterClientFo
         const filtered = stored.filter((o: any) => o.id !== res.organization.id);
         filtered.unshift(res.organization);
         localStorage.setItem('ezidi_submitted_orgs', JSON.stringify(filtered));
+        localStorage.setItem('ezidi_active_org_id', res.organization.id);
       } catch {}
     }
   };
@@ -127,22 +133,39 @@ export function OrgRegisterClientForm({ countries, cities }: OrgRegisterClientFo
   if (successOrg) {
     return (
       <div className="glass-panel rounded-3xl p-8 sm:p-12 border border-slate-800 text-center space-y-6 animate-in zoom-in-95">
-        <CheckCircle2 className="w-16 h-16 text-amber-400 mx-auto" />
-        <div className="space-y-2">
-          <h2 className="text-2xl sm:text-3xl font-black text-white">
-            Registration Application Submitted!
+        <div className="w-20 h-20 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center mx-auto text-4xl shadow-xl shadow-emerald-500/10">
+          ✓
+        </div>
+        <div className="space-y-3">
+          <h2 className="text-2xl sm:text-4xl font-black text-white">
+            {isAr ? 'تم إرسال طلب تسجيل المنظمة بنجاح!' : 'Registration Application Submitted!'}
           </h2>
-          <p className="text-sm text-slate-300 max-w-lg mx-auto leading-relaxed">
-            Your application for <strong className="text-amber-300">&quot;{successOrg.name}&quot;</strong> has been securely submitted to the administrative verification queue.
+          <p className="text-sm sm:text-base text-slate-300 max-w-lg mx-auto leading-relaxed">
+            {isAr ? (
+              <>
+                تم إرسال طلب تسجيل منظمة <strong className="text-amber-300">&quot;{successOrg.name}&quot;</strong> بنجاح إلى طابور التدقيق الإداري.
+              </>
+            ) : (
+              <>
+                Your application for <strong className="text-amber-300">&quot;{successOrg.name}&quot;</strong> has been securely submitted to the administrative verification queue.
+              </>
+            )}
           </p>
         </div>
 
-        <div className="pt-4 flex items-center justify-center gap-4">
+        <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
           <button
             onClick={() => router.push('/organizations')}
-            className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm shadow-md"
+            className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm"
           >
-            Explore Verified Organizations
+            {isAr ? 'استكشاف المنظمات الموثقة' : 'Explore Verified Organizations'}
+          </button>
+          <button
+            onClick={() => router.push('/organization/login')}
+            className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>{isAr ? 'الدخول المباشر إلى بوابة المنظمة ←' : 'Enter Organization Portal →'}</span>
           </button>
         </div>
       </div>
@@ -161,65 +184,63 @@ export function OrgRegisterClientForm({ countries, cities }: OrgRegisterClientFo
       {/* 1. Identity & Type */}
       <div className="space-y-4">
         <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
-          <Building2 className="w-4 h-4 text-amber-400" />
-          <span>1. Organization Identity</span>
+          <Building2 className="w-5 h-5 text-amber-400" />
+          <span>{isAr ? '1. هوية وبيانات المنظمة' : '1. Organization Identity'}</span>
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Official Organization Name *
+              {isAr ? 'اسم المنظمة الرسمي (بالإنجليزي أو اللاتيني) *' : 'Official Organization Name *'}
             </label>
             <input
               type="text"
               required
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="e.g. Yazidi Justice Coalition"
+              placeholder={isAr ? 'مثال: Yazidi Global Solidarity' : 'e.g. Yazidi Global Solidarity'}
               className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
             />
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Organization Name (Arabic / Optional)
+              {isAr ? 'اسم المنظمة بالعربية (اختياري)' : 'Arabic Organization Name (Optional)'}
             </label>
             <input
               type="text"
-              dir="rtl"
               value={formData.name_ar}
               onChange={(e) => setFormData({ ...formData, name_ar: e.target.value })}
-              placeholder="اسم المنظمة بالعربية..."
+              placeholder={isAr ? 'مثال: المبادرة الإيزيدية العالمية' : 'e.g. المبادرة الإيزيدية العالمية'}
               className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
             />
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Organization Type *
+              {isAr ? 'نوع ونشاط المنظمة *' : 'Organization Type *'}
             </label>
             <select
               value={formData.organization_type}
               onChange={(e) => setFormData({ ...formData, organization_type: e.target.value })}
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 font-semibold"
             >
-              <option value="Human Rights NGO">Human Rights NGO</option>
-              <option value="Cultural Association">Cultural Association</option>
-              <option value="Community Center">Community Center</option>
-              <option value="Youth Association">Youth & Student Association</option>
-              <option value="Women's Organization">Women&apos;s Empowerment Organization</option>
-              <option value="Religious & Heritage Institution">Religious & Heritage Institution</option>
-              <option value="Media & Documentation Group">Media & Documentation Group</option>
-              <option value="Other">Other Non-Profit</option>
+              <option value="Human Rights NGO">{isAr ? 'منظمة حقوق إنسان وعدالة اجتماعية' : 'Human Rights & Advocacy NGO'}</option>
+              <option value="Cultural & Diaspora Center">{isAr ? 'مركز ثقافي واجتماعي في المهجر' : 'Cultural & Diaspora Center'}</option>
+              <option value="Youth Association">{isAr ? 'رابطة شبابية وطلابية' : 'Youth & Student Association'}</option>
+              <option value="Women's Organization">{isAr ? 'منظمة تمكين المرأة الإيزيدية' : "Women's Empowerment Organization"}</option>
+              <option value="Religious & Heritage Institution">{isAr ? 'مؤسسة دينية وتراثية' : 'Religious & Heritage Institution'}</option>
+              <option value="Media & Documentation Group">{isAr ? 'مجموعة إعلامية وتوثيقية' : 'Media & Documentation Group'}</option>
+              <option value="Other">{isAr ? 'منظمة أو مبادرة أخرى' : 'Other Non-Profit'}</option>
             </select>
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Logo Image URL (Optional)
+              {isAr ? 'رابط شعار المنظمة (اختياري)' : 'Logo Image URL (Optional)'}
             </label>
             <input
-              type="url"
+              type="text"
               value={formData.logo}
               onChange={(e) => setFormData({ ...formData, logo: e.target.value })}
               placeholder="https://example.org/logo.png"
@@ -229,14 +250,14 @@ export function OrgRegisterClientForm({ countries, cities }: OrgRegisterClientFo
 
           <div className="sm:col-span-2">
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Mission & Description *
+              {isAr ? 'رسالة ونبذة عن المنظمة وأهدافها *' : 'Mission & Description *'}
             </label>
             <textarea
               required
               rows={3}
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Describe your organization's mission, community activities, and goals..."
+              placeholder={isAr ? 'اكتب نبذة عن أهداف المنظمة وأنشطتها ومجالات عملها المجتمعي...' : "Describe your organization's mission, community activities, and goals..."}
               className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
             />
           </div>
@@ -246,14 +267,14 @@ export function OrgRegisterClientForm({ countries, cities }: OrgRegisterClientFo
       {/* 2. Contact & Location */}
       <div className="space-y-4">
         <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
-          <MapPin className="w-4 h-4 text-amber-400" />
-          <span>2. Headquarters & Location</span>
+          <MapPin className="w-5 h-5 text-amber-400" />
+          <span>{isAr ? '2. المقر والموقع الجغرافي حول العالم' : '2. Headquarters & Location'}</span>
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Country *
+              {isAr ? 'الدولة *' : 'Country *'}
             </label>
             <select
               value={formData.country_id}
@@ -262,7 +283,7 @@ export function OrgRegisterClientForm({ countries, cities }: OrgRegisterClientFo
             >
               {countries.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name_en}
+                  {isAr ? (c.name_ar || c.name_en) : c.name_en}
                 </option>
               ))}
             </select>
@@ -271,7 +292,7 @@ export function OrgRegisterClientForm({ countries, cities }: OrgRegisterClientFo
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-xs font-semibold text-slate-300">
-                City *
+                {isAr ? 'المدينة / المنطقة *' : 'City *'}
               </label>
               <button
                 type="button"
@@ -283,7 +304,9 @@ export function OrgRegisterClientForm({ countries, cities }: OrgRegisterClientFo
                 }}
                 className="text-[11px] text-amber-400 hover:text-amber-300 underline font-semibold"
               >
-                {isCustomCity ? '← Choose from list' : '+ Enter custom city worldwide'}
+                {isCustomCity
+                  ? (isAr ? '← اختيار من القائمة' : '← Choose from list')
+                  : (isAr ? '+ كتابة اسم أي مدينة بالعالم' : '+ Enter custom city worldwide')}
               </button>
             </div>
 
@@ -293,7 +316,7 @@ export function OrgRegisterClientForm({ countries, cities }: OrgRegisterClientFo
                 required
                 value={customCityName}
                 onChange={(e) => handleCustomCityChange(e.target.value)}
-                placeholder="Type city name (e.g. Lalish, Berlin, Erbil, Paris, Lincoln)..."
+                placeholder={isAr ? 'اكتب اسم المدينة (مثل: لالش، هانوفر، دهوك، برلين، باريس)...' : 'Type city name (e.g. Lalish, Berlin, Erbil, Paris)...'}
                 className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-amber-500/80 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
               />
             ) : (
@@ -310,11 +333,11 @@ export function OrgRegisterClientForm({ countries, cities }: OrgRegisterClientFo
               >
                 {filteredCities.map((ct) => (
                   <option key={ct.id} value={ct.id}>
-                    {ct.name_en}
+                    {isAr ? (ct.name_ar || ct.name_en) : ct.name_en}
                   </option>
                 ))}
                 <option value="custom">
-                  ✍️ Other worldwide city (type / pick on map)...
+                  ✍️ {isAr ? 'مدينة أخرى حول العالم (اكتب أو حدد على الخريطة)...' : 'Other worldwide city (type / pick on map)...'}
                 </option>
               </select>
             )}
@@ -322,20 +345,21 @@ export function OrgRegisterClientForm({ countries, cities }: OrgRegisterClientFo
 
           <div className="sm:col-span-2">
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Complete Official Address *
+              {isAr ? 'العنوان والمقر الكامل *' : 'Complete Official Address *'}
             </label>
             <input
               type="text"
               required
               value={formData.full_address}
               onChange={(e) => setFormData({ ...formData, full_address: e.target.value })}
+              placeholder={isAr ? 'مثال: شارع المحطة 12، هانوفر، ألمانيا' : 'e.g. Station Street 12, Hanover, Germany'}
               className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
             />
           </div>
 
           <div className="sm:col-span-2">
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Map Location Pin
+              {isAr ? 'تحديد الموقع على خريطة العالم التفاعلية' : 'Map Location Pin'}
             </label>
             <LocationPicker
               initialLatitude={formData.latitude}
@@ -346,79 +370,97 @@ export function OrgRegisterClientForm({ countries, cities }: OrgRegisterClientFo
         </div>
       </div>
 
-      {/* 3. Communication & Verification Evidence */}
+      {/* 3. Official Contact Info */}
       <div className="space-y-4">
         <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
-          <Globe className="w-4 h-4 text-amber-400" />
-          <span>3. Verification & Official Contact</span>
+          <Mail className="w-5 h-5 text-amber-400" />
+          <span>{isAr ? '3. بيانات التواصل والحساب الرسمي' : '3. Official Contact & Account'}</span>
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Official Email *
+              {isAr ? 'البريد الإلكتروني الرسمي للمنظمة *' : 'Official Contact Email *'}
             </label>
             <input
               type="email"
               required
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              placeholder="contact@ngo.org"
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              placeholder="contact@your-ngo.org"
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 font-mono"
             />
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Official Website (Optional)
-            </label>
-            <input
-              type="url"
-              value={formData.website}
-              onChange={(e) => setFormData({ ...formData, website: e.target.value })}
-              placeholder="https://ngo.org"
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Official Phone (Optional)
+              {isAr ? 'رقم الهاتف / الواتساب الرسمي' : 'Official Phone / WhatsApp'}
             </label>
             <input
               type="tel"
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              placeholder="+49 ..."
+              placeholder="+49 123 456789"
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 font-mono"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              {isAr ? 'الموقع الرسمي أو رابط صفحة المنظمة' : 'Official Website / Social Page'}
+            </label>
+            <input
+              type="text"
+              value={formData.website}
+              onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+              placeholder="https://facebook.com/your-org"
               className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
             />
           </div>
         </div>
+      </div>
 
-        {/* Supporting Docs Box */}
-        <div className="p-5 rounded-2xl bg-slate-900/60 border border-dashed border-slate-700 text-center space-y-2">
-          <UploadCloud className="w-8 h-8 text-amber-400 mx-auto" />
-          <h4 className="text-xs font-bold text-white uppercase">
-            Upload Non-Profit Registration Charter (PDF / JPG)
-          </h4>
-          <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-            Supporting documents are encrypted in private storage and accessible only to verification admins.
-          </p>
+      {/* 4. Verification Evidence & Documents */}
+      <div className="space-y-4">
+        <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
+          <FileText className="w-5 h-5 text-amber-400" />
+          <span>{isAr ? '4. وثائق التوثيق والاعتماد (اختياري / إثبات النشاط)' : '4. Verification Evidence & Documents'}</span>
+        </h3>
+
+        <div className="p-5 rounded-2xl bg-slate-900 border border-dashed border-slate-700 text-center space-y-3">
+          <UploadCloud className="w-10 h-10 text-amber-400 mx-auto" />
+          <div className="space-y-1">
+            <span className="text-sm font-bold text-white block">
+              {isAr ? 'إرفاق وثيقة تسجيل أو ترخيص المنظمة' : 'Attach Registration Certificate or Official Documentation'}
+            </span>
+            <p className="text-xs text-slate-400 max-w-md mx-auto">
+              {isAr
+                ? 'يمكنك رفع شهادة تسجيل المنظمة غير الربحية أو كتاب رسمي لإثبات الصفة القانونية.'
+                : 'Upload proof of non-profit status, official registration letter, or founding documents.'}
+            </p>
+          </div>
           <input
             type="file"
-            accept=".pdf,.jpg,.jpeg,.png"
-            className="block text-xs text-slate-400 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer mx-auto"
+            className="text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer"
           />
         </div>
       </div>
 
-      <div className="pt-4 border-t border-slate-800 flex justify-end">
+      {/* Submit Button */}
+      <div className="pt-4 border-t border-slate-800 flex items-center justify-end">
         <button
           type="submit"
-          disabled={loading || formData.name.length < 3 || !formData.email}
-          className="px-8 py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-sm shadow-md transition-all disabled:opacity-50"
+          disabled={loading}
+          className="w-full sm:w-auto px-8 py-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 hover:scale-[1.01]"
         >
-          {loading ? 'Submitting Application...' : 'Submit Application for Verification'}
+          {loading ? (
+            <span>{isAr ? 'جاري إرسال طلب المنظمة...' : 'Submitting Application...'}</span>
+          ) : (
+            <>
+              <ShieldCheck className="w-5 h-5" />
+              <span>{isAr ? 'إرسال طلب تسجيل وتوثيق المنظمة' : 'Submit Organization Application'}</span>
+            </>
+          )}
         </button>
       </div>
     </form>

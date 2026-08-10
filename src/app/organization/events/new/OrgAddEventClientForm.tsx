@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useOrgLanguage } from '@/components/organization/OrgLanguageProvider';
 import { EventCategory, Country, City, Organization } from '@/types/database';
 import { POPULAR_TIMEZONES } from '@/lib/utils/timezone';
 import { LocationPicker } from '@/components/maps/LocationPicker';
@@ -16,6 +17,8 @@ import {
   CheckCircle2,
   AlertCircle,
   AlertTriangle,
+  PlusCircle,
+  Sparkles,
 } from 'lucide-react';
 
 interface OrgAddEventClientFormProps {
@@ -32,6 +35,25 @@ export function OrgAddEventClientForm({
   organizations,
 }: OrgAddEventClientFormProps) {
   const router = useRouter();
+  const { t, isRtl } = useOrgLanguage();
+
+  const [activeOrgId, setActiveOrgId] = useState<string>(organizations[0]?.id || '');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('ezidi_active_org_id');
+    if (saved && organizations.some((o) => o.id === saved)) {
+      setActiveOrgId(saved);
+      const matchedOrg = organizations.find((o) => o.id === saved);
+      if (matchedOrg) {
+        setFormData((prev) => ({
+          ...prev,
+          organization_id: matchedOrg.id,
+          organizer_name: matchedOrg.name,
+          contact_email: matchedOrg.email,
+        }));
+      }
+    }
+  }, [organizations]);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -44,7 +66,7 @@ export function OrgAddEventClientForm({
     timezone: 'Europe/Berlin',
     country_id: countries[0]?.id || '',
     city_id: cities[0]?.id || '',
-    full_address: 'Pariser Platz 1, 10117 Berlin, Germany',
+    full_address: 'Berlin, Germany',
     latitude: 52.5163,
     longitude: 13.3777,
     organization_id: organizations[0]?.id || '',
@@ -119,22 +141,16 @@ export function OrgAddEventClientForm({
     setError(null);
     setDuplicateWarning(null);
 
-    const userContext = {
-      id: 'user-org-owner',
-      role: 'organization_owner' as any,
-      email: formData.contact_email || 'berlin@demo-yazidi.org',
-    };
-
     const submissionData = {
       ...formData,
       city_id: isCustomCity && customCityName ? `custom:${customCityName}` : formData.city_id,
     };
 
-    const res = await createEventAction(submissionData, userContext);
+    const res = await createEventAction(submissionData);
     setLoading(false);
 
     if (!res.success) {
-      setError(res.error || 'Failed to publish event.');
+      setError(res.error || (isRtl ? 'تعذر نشر الفعالية.' : 'Failed to publish event.'));
     } else {
       setResultEvent(res);
       if (res.potentialDuplicateWarning) {
@@ -147,34 +163,57 @@ export function OrgAddEventClientForm({
     const isDirect = resultEvent.isPublishedDirectly;
     return (
       <div className="glass-panel rounded-3xl p-8 sm:p-12 border border-slate-800 text-center space-y-6 animate-in zoom-in-95">
-        <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center mx-auto text-3xl">
+        <div className="w-20 h-20 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center mx-auto text-4xl shadow-xl shadow-emerald-500/10">
           ✓
         </div>
 
-        <div className="space-y-2">
-          <h2 className="text-2xl sm:text-3xl font-black text-white">
-            {isDirect ? 'Event Published Directly Live!' : 'Event Submitted for Verification'}
-          </h2>
-          <p className="text-sm text-slate-300 max-w-lg mx-auto leading-relaxed">
+        <div className="space-y-3">
+          <h2 className="text-2xl sm:text-4xl font-black text-white">
             {isDirect
-              ? 'Your verified organization has published this event live to the global directory and world map.'
-              : 'Your event has been submitted to the administrative moderation queue.'}
+              ? (isRtl ? 'تم نشر الفعالية مباشرة بنجاح!' : 'Event Published Successfully!')
+              : (isRtl ? 'تم إرسال الفعالية للمراجعة السريعة' : 'Event Submitted for Review')}
+          </h2>
+          <p className="text-sm sm:text-base text-slate-300 max-w-lg mx-auto leading-relaxed">
+            {isDirect
+              ? (isRtl
+                  ? 'تم نشر الفعالية فوراً بالاعتماد على صلاحية النشر المباشر لمنظمتكم، وهي ظاهرة الآن على الموقع العام وخريطة العالم.'
+                  : 'Your event was published directly by your verified organization and is now live on the public website and world map.')
+              : (isRtl
+                  ? 'تم استلام بيانات الفعالية وإدراجها في طابور المراجعة الإدارية للتحقق من دقة الموقع والتفاصيل قبل النشر.'
+                  : 'Your submission has been received and entered into our moderation review queue.')}
           </p>
         </div>
 
         {duplicateWarning && (
-          <div className="p-4 rounded-xl bg-amber-950/70 border border-amber-500/50 text-amber-300 text-xs flex items-center gap-2 max-w-md mx-auto text-left">
-            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
-            <span>Similar event notice: {duplicateWarning}</span>
+          <div className="p-4 rounded-xl bg-amber-950/60 border border-amber-800 text-amber-300 text-xs text-left max-w-md mx-auto flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold block text-white">{isRtl ? 'ملاحظة تشابه:' : 'Potential Duplicate Note:'}</span>
+              <span>{duplicateWarning}</span>
+            </div>
           </div>
         )}
 
-        <div className="pt-4 flex flex-wrap items-center justify-center gap-4">
+        <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
           <button
             onClick={() => router.push('/organization/events')}
-            className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm shadow-md"
+            className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs sm:text-sm"
           >
-            Manage Organization Events →
+            {isRtl ? 'العودة لفعاليات المنظمة' : 'Back to My Events'}
+          </button>
+          <button
+            onClick={() => {
+              setResultEvent(null);
+              setFormData({
+                ...formData,
+                title: '',
+                title_ar: '',
+                description: '',
+              });
+            }}
+            className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs sm:text-sm shadow-md"
+          >
+            {isRtl ? '+ إضافة فعالية أخرى' : '+ Publish Another Event'}
           </button>
         </div>
       </div>
@@ -183,6 +222,18 @@ export function OrgAddEventClientForm({
 
   return (
     <form onSubmit={handleSubmit} className="glass-panel rounded-3xl p-6 sm:p-10 border border-slate-800 space-y-8">
+      <div className="border-b border-slate-800 pb-4">
+        <h1 className="text-2xl font-black text-white flex items-center gap-2">
+          <PlusCircle className="w-6 h-6 text-amber-400" />
+          <span>{isRtl ? 'إضافة فعالية جديدة باسم المنظمة' : 'Publish New Event'}</span>
+        </h1>
+        <p className="text-xs text-slate-400 mt-1">
+          {isRtl
+            ? 'املأ بيانات الفعالية لنشرها مباشرة أو إرسالها للمراجعة.'
+            : 'Fill in event details to publish directly or submit to the review queue.'}
+        </p>
+      </div>
+
       {error && (
         <div className="p-4 rounded-xl bg-red-950/80 border border-red-800 text-red-300 text-sm flex items-center gap-3">
           <AlertCircle className="w-5 h-5 shrink-0" />
@@ -190,72 +241,97 @@ export function OrgAddEventClientForm({
         </div>
       )}
 
-      {/* 1. Title & Category */}
+      {/* 1. Basic Info */}
       <div className="space-y-4">
         <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
           <FileText className="w-4 h-4 text-amber-400" />
-          <span>1. Event Title & Category</span>
+          <span>{isRtl ? '1. العنوان والوصف' : '1. Event Title & Description'}</span>
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="sm:col-span-2">
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Event Title *
+              {isRtl ? 'عنوان الفعالية *' : 'Event Title *'}
             </label>
             <input
               type="text"
               required
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              placeholder="e.g. Annual Yazidi Solidarity March"
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              placeholder={isRtl ? 'مثال: وقفة تضامنية وإحياء ذكرى الإبادة الإيزيدية' : 'e.g. Annual Ezidi Remembrance & Peace Vigil'}
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
             />
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Arabic Title (Optional)
-            </label>
-            <input
-              type="text"
-              dir="rtl"
-              value={formData.title_ar}
-              onChange={(e) => setFormData({ ...formData, title_ar: e.target.value })}
-              placeholder="عنوان الفعالية بالعربية..."
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Event Category *
+              {isRtl ? 'تصنيف ونوع الفعالية *' : 'Category *'}
             </label>
             <select
               value={formData.category_id}
               onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
               className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
             >
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.name_en}
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {isRtl ? (c.name_ar || c.name_en) : c.name_en}
                 </option>
               ))}
             </select>
           </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              {isRtl ? 'المنظمة المنظمة للفعالية *' : 'Publishing Organization *'}
+            </label>
+            <select
+              value={formData.organization_id}
+              onChange={(e) => {
+                const org = organizations.find((o) => o.id === e.target.value);
+                setFormData({
+                  ...formData,
+                  organization_id: e.target.value,
+                  organizer_name: org?.name || '',
+                  contact_email: org?.email || formData.contact_email,
+                });
+              }}
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-amber-300 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+            >
+              {organizations.map((org) => (
+                <option key={org.id} value={org.id}>
+                  {org.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              {isRtl ? 'تفاصيل وبرنامج الفعالية *' : 'Detailed Description *'}
+            </label>
+            <textarea
+              required
+              rows={4}
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              placeholder={isRtl ? 'اكتب تفاصيل الفعالية، جدول الأعمال، المتحدثين، وأي تعليمات للمشاركين...' : 'Provide complete context, schedule, guest speakers, and instructions...'}
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+            />
+          </div>
         </div>
       </div>
 
-      {/* 2. Date, Time & Timezone */}
+      {/* 2. Date & Time */}
       <div className="space-y-4">
         <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
           <Calendar className="w-4 h-4 text-amber-400" />
-          <span>2. Schedule & Timezone</span>
+          <span>{isRtl ? '2. الموعد والتوقيت' : '2. Date & Timing'}</span>
         </h3>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Event Date *
+              {isRtl ? 'تاريخ الفعالية *' : 'Date *'}
             </label>
             <input
               type="date"
@@ -268,7 +344,7 @@ export function OrgAddEventClientForm({
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Start Time *
+              {isRtl ? 'وقت البدء *' : 'Start Time *'}
             </label>
             <input
               type="time"
@@ -281,7 +357,7 @@ export function OrgAddEventClientForm({
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              End Time (Optional)
+              {isRtl ? 'وقت الانتهاء (اختياري)' : 'End Time'}
             </label>
             <input
               type="time"
@@ -291,9 +367,9 @@ export function OrgAddEventClientForm({
             />
           </div>
 
-          <div className="sm:col-span-3">
+          <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              IANA Timezone *
+              {isRtl ? 'المنطقة الزمنية *' : 'Timezone *'}
             </label>
             <select
               value={formData.timezone}
@@ -302,7 +378,7 @@ export function OrgAddEventClientForm({
             >
               {POPULAR_TIMEZONES.map((tz) => (
                 <option key={tz.value} value={tz.value}>
-                  {tz.label} ({tz.value})
+                  {tz.label}
                 </option>
               ))}
             </select>
@@ -310,17 +386,17 @@ export function OrgAddEventClientForm({
         </div>
       </div>
 
-      {/* 3. Venue & Coordinates */}
+      {/* 3. Location & Map */}
       <div className="space-y-4">
         <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
           <MapPin className="w-4 h-4 text-amber-400" />
-          <span>3. Venue & Map Location</span>
+          <span>{isRtl ? '3. المكان والموقع الجغرافي' : '3. Location & Venue'}</span>
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Country *
+              {isRtl ? 'الدولة *' : 'Country *'}
             </label>
             <select
               value={formData.country_id}
@@ -329,7 +405,7 @@ export function OrgAddEventClientForm({
             >
               {countries.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name_en}
+                  {isRtl ? (c.name_ar || c.name_en) : c.name_en}
                 </option>
               ))}
             </select>
@@ -338,7 +414,7 @@ export function OrgAddEventClientForm({
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-xs font-semibold text-slate-300">
-                City *
+                {isRtl ? 'المدينة / المنطقة *' : 'City *'}
               </label>
               <button
                 type="button"
@@ -350,7 +426,9 @@ export function OrgAddEventClientForm({
                 }}
                 className="text-[11px] text-amber-400 hover:text-amber-300 underline font-semibold"
               >
-                {isCustomCity ? '← Choose from list' : '+ Enter custom city worldwide'}
+                {isCustomCity
+                  ? (isRtl ? '← اختيار من القائمة' : '← Choose from list')
+                  : (isRtl ? '+ كتابة اسم أي مدينة بالعالم' : '+ Enter custom city worldwide')}
               </button>
             </div>
 
@@ -360,7 +438,7 @@ export function OrgAddEventClientForm({
                 required
                 value={customCityName}
                 onChange={(e) => handleCustomCityChange(e.target.value)}
-                placeholder="Type any city worldwide (e.g. Lalish, Duhok, Hanover, Sydney...)"
+                placeholder={isRtl ? 'اكتب اسم المدينة (مثل: لالش، هانوفر، دهوك، برلين، باريس)...' : 'Type city name...'}
                 className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-amber-500/80 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
               />
             ) : (
@@ -377,11 +455,11 @@ export function OrgAddEventClientForm({
               >
                 {filteredCities.map((ct) => (
                   <option key={ct.id} value={ct.id}>
-                    {ct.name_en}
+                    {isRtl ? (ct.name_ar || ct.name_en) : ct.name_en}
                   </option>
                 ))}
                 <option value="custom">
-                  ✍️ Other worldwide city (type / pick on map)...
+                  ✍️ {isRtl ? 'مدينة أخرى حول العالم (اكتب أو حدد على الخريطة)...' : 'Other worldwide city (type / pick on map)...'}
                 </option>
               </select>
             )}
@@ -389,7 +467,7 @@ export function OrgAddEventClientForm({
 
           <div className="sm:col-span-2">
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Complete Venue Address *
+              {isRtl ? 'العنوان الكامل ومكان التجمع *' : 'Full Address & Meeting Point *'}
             </label>
             <input
               type="text"
@@ -402,7 +480,7 @@ export function OrgAddEventClientForm({
 
           <div className="sm:col-span-2">
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Interactive Map Pin
+              {isRtl ? 'تحديد الموقع على الخريطة التفاعلية' : 'Interactive Map Pin'}
             </label>
             <LocationPicker
               initialLatitude={formData.latitude}
@@ -413,65 +491,69 @@ export function OrgAddEventClientForm({
         </div>
       </div>
 
-      {/* 4. Description & Details */}
+      {/* 4. Media & Contact */}
       <div className="space-y-4">
         <h3 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
-          <Building2 className="w-4 h-4 text-amber-400" />
-          <span>4. Description & Evidence</span>
+          <Globe className="w-4 h-4 text-amber-400" />
+          <span>{isRtl ? '4. بوستر الفعالية والتواصل' : '4. Poster & Contact Information'}</span>
         </h3>
 
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Event Description & Program *
+              {isRtl ? 'رابط بوستر / صورة الفعالية' : 'Poster Image URL'}
             </label>
-            <textarea
-              required
-              rows={4}
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Outline the schedule, speakers, and goals of this event..."
+            <input
+              type="text"
+              value={formData.poster_url}
+              onChange={(e) => setFormData({ ...formData, poster_url: e.target.value })}
+              placeholder="https://example.com/poster.jpg"
               className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                Poster Image URL (Optional)
-              </label>
-              <input
-                type="url"
-                value={formData.poster_url}
-                onChange={(e) => setFormData({ ...formData, poster_url: e.target.value })}
-                placeholder="https://example.org/poster.jpg"
-                className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-              />
-            </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              {isRtl ? 'البريد الإلكتروني للاستفسارات' : 'Inquiries Email'}
+            </label>
+            <input
+              type="email"
+              value={formData.contact_email}
+              onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })}
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 font-mono"
+            />
+          </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                Official Press Release / Source URL
-              </label>
-              <input
-                type="url"
-                value={formData.source_url}
-                onChange={(e) => setFormData({ ...formData, source_url: e.target.value })}
-                placeholder="https://organization.org/press-release"
-                className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-              />
-            </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              {isRtl ? 'رابط الإعلان الرسمي / فيسبوك' : 'Official Link / Facebook Event'}
+            </label>
+            <input
+              type="text"
+              value={formData.source_url}
+              onChange={(e) => setFormData({ ...formData, source_url: e.target.value })}
+              placeholder="https://facebook.com/events/123"
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+            />
           </div>
         </div>
       </div>
 
-      <div className="pt-4 border-t border-slate-800 flex justify-end">
+      {/* Submit Button */}
+      <div className="pt-4 border-t border-slate-800 flex items-center justify-end">
         <button
           type="submit"
-          disabled={loading || formData.title.length < 3 || formData.description.length < 10}
-          className="px-8 py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-sm shadow-md transition-all disabled:opacity-50"
+          disabled={loading}
+          className="w-full sm:w-auto px-8 py-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 hover:scale-105"
         >
-          {loading ? 'Publishing...' : 'Publish Event'}
+          {loading ? (
+            <span>{isRtl ? 'جاري نشر الفعالية...' : 'Publishing Event...'}</span>
+          ) : (
+            <>
+              <Sparkles className="w-5 h-5" />
+              <span>{isRtl ? 'نشر الفعالية باسم المنظمة' : 'Publish Event'}</span>
+            </>
+          )}
         </button>
       </div>
     </form>
