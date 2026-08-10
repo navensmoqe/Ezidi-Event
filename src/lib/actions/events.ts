@@ -188,9 +188,14 @@ export async function createEventAction(formData: unknown, userContext?: { id: s
   }
 
   try {
+    revalidatePath('/[locale]/events', 'page');
+    revalidatePath('/[locale]/map', 'page');
+    revalidatePath('/[locale]', 'page');
     revalidatePath('/admin/submissions');
     revalidatePath('/admin/events');
     revalidatePath('/admin');
+    revalidatePath('/organization/events');
+    revalidatePath('/organization/dashboard');
   } catch {}
 
   return {

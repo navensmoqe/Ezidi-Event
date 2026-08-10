@@ -5,6 +5,9 @@ import { Link } from '@/i18n/routing';
 import { EventVerificationBadge } from '@/components/ui/EventVerificationBadge';
 import { MapPin, Calendar, ExternalLink } from 'lucide-react';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export const metadata = {
   title: 'Interactive World Map | Ezidi Events Worldwide',
   description: 'Explore verified Ezidi rallies, memorial conferences, and cultural events on the global map.',

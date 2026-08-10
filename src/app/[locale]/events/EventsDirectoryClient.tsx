@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { EventItem, EventCategory, Country, City } from '@/types/database';
 import { EventCard } from '@/components/events/EventCard';
@@ -21,6 +21,7 @@ export function EventsDirectoryClient({
   cities,
 }: EventsDirectoryClientProps) {
   const t = useTranslations('events');
+  const [allEvents, setAllEvents] = useState<EventItem[]>(initialEvents);
 
   const [category, setCategory] = useState('all');
   const [country, setCountry] = useState('all');
@@ -29,8 +30,55 @@ export function EventsDirectoryClient({
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('upcoming');
 
+  // Client-side instant synchronization with submitted events & API
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('ezidi_submitted_events') || '[]');
+      if (Array.isArray(stored) && stored.length > 0) {
+        setAllEvents((prev) => {
+          const map = new Map<string, EventItem>();
+          // Published local events take precedence
+          stored.forEach((e: EventItem) => {
+            if (e.status === 'published' || e.visibility === 'public') {
+              map.set(e.id, e);
+            }
+          });
+          prev.forEach((e) => {
+            if (!map.has(e.id)) {
+              map.set(e.id, e);
+            }
+          });
+          return Array.from(map.values());
+        });
+      }
+    } catch {}
+
+    // Also fetch fresh from /api/events
+    fetch('/api/events')
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setAllEvents((prev) => {
+            const map = new Map<string, EventItem>();
+            data.forEach((e: EventItem) => {
+              if (e.status === 'published') {
+                map.set(e.id, e);
+              }
+            });
+            prev.forEach((e) => {
+              if (!map.has(e.id)) {
+                map.set(e.id, e);
+              }
+            });
+            return Array.from(map.values());
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const filteredEvents = useMemo(() => {
-    let list = [...initialEvents];
+    let list = [...allEvents];
 
     if (category !== 'all') {
       const catObj = categories.find((c) => c.slug === category);
@@ -57,7 +105,9 @@ export function EventsDirectoryClient({
           e.title.toLowerCase().includes(q) ||
           e.description.toLowerCase().includes(q) ||
           (e.organizer_name && e.organizer_name.toLowerCase().includes(q)) ||
-          (e.full_address && e.full_address.toLowerCase().includes(q))
+          (e.full_address && e.full_address.toLowerCase().includes(q)) ||
+          (e.city_id && e.city_id.toLowerCase().includes(q)) ||
+          (e.country_id && e.country_id.toLowerCase().includes(q))
       );
     }
 
@@ -71,7 +121,7 @@ export function EventsDirectoryClient({
     }
 
     return list;
-  }, [initialEvents, category, country, city, status, search, sort, categories, countries]);
+  }, [allEvents, category, country, city, status, search, sort, categories, countries]);
 
   const handleReset = () => {
     setCategory('all');
@@ -84,6 +134,7 @@ export function EventsDirectoryClient({
 
   return (
     <div className="space-y-6">
+      {/* Filters Bar */}
       <EventFilters
         categories={categories}
         countries={countries}
@@ -103,24 +154,21 @@ export function EventsDirectoryClient({
         onReset={handleReset}
       />
 
-      <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-        <span>
-          Showing <strong className="text-white font-mono">{filteredEvents.length}</strong> published events
-        </span>
-      </div>
-
+      {/* Events Grid */}
       {filteredEvents.length === 0 ? (
-        <div className="glass-panel rounded-2xl p-12 text-center space-y-4 border border-slate-800">
-          <CalendarX className="w-12 h-12 text-slate-600 mx-auto" />
-          <h3 className="text-lg font-bold text-white">No Events Found</h3>
-          <p className="text-sm text-slate-400 max-w-md mx-auto">
-            {t('noEventsFound')}
-          </p>
+        <div className="glass-panel rounded-3xl p-12 text-center border border-slate-800 space-y-4">
+          <div className="w-16 h-16 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-slate-500">
+            <CalendarX className="w-8 h-8" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-lg font-bold text-white">{t('noEventsFound')}</h3>
+            <p className="text-xs text-slate-400 max-w-sm mx-auto">{t('noEventsSubtitle')}</p>
+          </div>
           <button
             onClick={handleReset}
-            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-semibold border border-slate-700 transition-colors"
+            className="px-4 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-semibold border border-amber-500/30 transition-colors"
           >
-            Reset All Filters
+            {t('resetFilters')}
           </button>
         </div>
       ) : (

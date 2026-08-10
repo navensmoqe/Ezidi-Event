@@ -3,6 +3,9 @@ import { getTranslations } from 'next-intl/server';
 import { db } from '@/lib/db';
 import { EventsDirectoryClient } from './EventsDirectoryClient';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export const metadata = {
   title: 'Global Events Directory | Ezidi Events Worldwide',
   description: 'Search and filter verified Ezidi demonstrations, memorial conferences, and community gatherings worldwide.',

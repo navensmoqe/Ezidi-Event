@@ -97,6 +97,14 @@ export function OrgAddEventClientForm({
       setError(res.error || (isRtl ? 'تعذر نشر الفعالية.' : 'Failed to publish event.'));
     } else {
       setResultEvent(res);
+      if (res.event) {
+        try {
+          const stored = JSON.parse(localStorage.getItem('ezidi_submitted_events') || '[]');
+          const filtered = stored.filter((ev: any) => ev.id !== res.event.id);
+          filtered.unshift(res.event);
+          localStorage.setItem('ezidi_submitted_events', JSON.stringify(filtered));
+        } catch {}
+      }
       if (res.potentialDuplicateWarning) {
         setDuplicateWarning(res.potentialDuplicateWarning);
       }
