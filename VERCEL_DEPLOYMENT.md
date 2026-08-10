@@ -1,32 +1,32 @@
-# Vercel staging deployment
+# النشر التجريبي على Vercel
 
-This repository builds as a Next.js application and can be deployed directly to Vercel. Do not commit `.env.local` or any real credentials.
+يُبنى هذا المستودع كتطبيق Next.js ويمكن نشره مباشرةً على Vercel. لا تُضف ملف `.env.local` أو أي بيانات اعتماد حقيقية إلى Git.
 
-## 1. Create the database
+## 1. إنشاء قاعدة البيانات
 
-Create a free Supabase project, then run the SQL migration at `supabase/migrations/20260809000000_initial_schema.sql` in the Supabase SQL Editor. The current local configuration contains placeholder credentials, so this is required before the site can use real persistent data.
+أنشئ مشروع Supabase مجانيًا، ثم نفّذ ملف الترحيل SQL الموجود في `supabase/migrations/20260809000000_initial_schema.sql` عبر محرر SQL في Supabase. يحتوي الإعداد المحلي الحالي على بيانات اعتماد نموذجية، لذلك تعد هذه الخطوة ضرورية قبل استخدام الموقع لبيانات حقيقية ودائمة.
 
-## 2. Configure Vercel
+## 2. إعداد Vercel
 
-Import `navensmoqe/Ezidi-Event` into Vercel. In **Settings → Environment Variables**, add these values for the Preview and Production environments:
+استورد مستودع `navensmoqe/Ezidi-Event` إلى Vercel. من **Settings → Environment Variables** أضف القيم التالية لبيئتَي المعاينة (Preview) والإنتاج (Production):
 
-| Variable | Value |
+| المتغير | القيمة |
 | --- | --- |
 | `APP_MODE` | `production` |
-| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your Supabase publishable/anon key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Your Supabase service-role key (server-only) |
-| `NEXT_PUBLIC_APP_URL` | The current Vercel deployment URL |
-| `NEXT_PUBLIC_DEFAULT_LOCALE` | `ar`, `en`, `de`, or `fr` |
-| `UPSTASH_REDIS_REST_URL` | Optional, recommended for production rate limiting |
-| `UPSTASH_REDIS_REST_TOKEN` | Optional, recommended for production rate limiting |
+| `NEXT_PUBLIC_SUPABASE_URL` | رابط مشروع Supabase الخاص بك |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | مفتاح Supabase العام / anon الخاص بك |
+| `SUPABASE_SERVICE_ROLE_KEY` | مفتاح service-role الخاص بـSupabase (للخادم فقط) |
+| `NEXT_PUBLIC_APP_URL` | رابط النشر الحالي على Vercel |
+| `NEXT_PUBLIC_DEFAULT_LOCALE` | `ar` أو `en` أو `de` أو `fr` |
+| `UPSTASH_REDIS_REST_URL` | اختياري، ويُنصح به لتحديد المعدل في بيئة الإنتاج |
+| `UPSTASH_REDIS_REST_TOKEN` | اختياري، ويُنصح به لتحديد المعدل في بيئة الإنتاج |
 
-Never expose `SUPABASE_SERVICE_ROLE_KEY` with a `NEXT_PUBLIC_` prefix.
+لا تُعرِّض `SUPABASE_SERVICE_ROLE_KEY` أبدًا باستخدام بادئة `NEXT_PUBLIC_`.
 
-## 3. Deploy and test
+## 3. النشر والاختبار
 
-Every push to `main` creates a Vercel deployment when the GitHub repository is connected. Test the public events pages, organization registration, and the administrator review queue on the generated Vercel URL.
+يُنشئ كل رفع إلى فرع `main` عملية نشر على Vercel عند ربط مستودع GitHub. اختبر صفحات الفعاليات العامة، وتسجيل المنظمات، وقائمة مراجعة الطلبات الإدارية عبر رابط Vercel الذي يتم إنشاؤه.
 
-## Important current boundary
+## حدّ مهم في الوضع الحالي
 
-The application still has a demo data layer and a temporary synchronization implementation. A fully production backend requires replacing that layer with the Supabase database defined by the migration before using the site for real registrations or sensitive data. Do not collect real passwords or private verification documents until that migration is complete.
+ما زال التطبيق يحتوي على طبقة بيانات تجريبية وتنفيذ مزامنة مؤقت. يتطلب الانتقال إلى خلفية إنتاج فعلية استبدال هذه الطبقة بقاعدة بيانات Supabase المحددة في ملف الترحيل قبل استخدام الموقع لتسجيلات حقيقية أو بيانات حساسة. لا تجمع كلمات مرور حقيقية أو وثائق تحقق خاصة قبل إكمال هذا الانتقال.
