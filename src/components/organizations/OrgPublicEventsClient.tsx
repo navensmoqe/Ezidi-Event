@@ -16,6 +16,24 @@ export function OrgPublicEventsClient({
 }: OrgPublicEventsClientProps) {
   const [events, setEvents] = useState<EventItem[]>(initialEvents);
 
+  const isMatchForThisOrg = (e: EventItem) => {
+    if (!e) return false;
+    const targetId = organization.id;
+    const targetName = (organization.name || '').trim().toLowerCase();
+    const targetEmail = (organization.email || '').trim().toLowerCase();
+
+    const evId = e.organization_id;
+    const evName = (e.organizer_name || '').trim().toLowerCase();
+    const evEmail = (e.contact_email || '').trim().toLowerCase();
+
+    return (
+      (targetId && evId === targetId) ||
+      (targetName && evName === targetName) ||
+      (targetName && evName.includes(targetName)) ||
+      (targetEmail && evEmail === targetEmail)
+    );
+  };
+
   useEffect(() => {
     // 1. Sync from localStorage
     try {
@@ -23,15 +41,9 @@ export function OrgPublicEventsClient({
       if (Array.isArray(stored) && stored.length > 0) {
         setEvents((prev) => {
           const map = new Map<string, EventItem>();
-          // Match by ID, name, or email
+          // Add local events for this org
           stored.forEach((e: EventItem) => {
-            if (
-              e &&
-              e.id &&
-              (e.organization_id === organization.id ||
-                e.organizer_name === organization.name ||
-                (e.contact_email && e.contact_email.toLowerCase() === organization.email?.toLowerCase()))
-            ) {
+            if (e && e.id && isMatchForThisOrg(e)) {
               map.set(e.id, { ...e, status: 'published', visibility: 'public' });
             }
           });
@@ -56,9 +68,7 @@ export function OrgPublicEventsClient({
               e &&
               e.id &&
               (e.status === 'published' || e.visibility === 'public') &&
-              (e.organization_id === organization.id ||
-                e.organizer_name === organization.name ||
-                (e.contact_email && e.contact_email.toLowerCase() === organization.email?.toLowerCase()))
+              isMatchForThisOrg(e)
           );
           if (orgEvents.length > 0) {
             setEvents((prev) => {
@@ -83,7 +93,6 @@ export function OrgPublicEventsClient({
   const upcomingEvents = events.filter((e) => (e.date || '') >= today);
   const pastEvents = events.filter((e) => (e.date || '') < today);
 
-  // If no upcoming date distinction, show all events
   const displayEvents = events;
 
   return (
