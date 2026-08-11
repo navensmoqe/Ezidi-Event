@@ -412,22 +412,118 @@ EXECUTE FUNCTION trg_fn_revoke_direct_publishing_on_suspension();
 
 -- 10. ROW LEVEL SECURITY (RLS) POLICIES
 
+-- Every public-schema table starts closed. Server-side application code uses
+-- the service_role key; browser access is granted explicitly below.
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE countries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE regions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE event_categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE organization_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organization_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE organization_verification_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE direct_publishing_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_sources ENABLE ROW LEVEL SECURITY;
+ALTER TABLE event_versions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE event_pending_changes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE event_change_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
+-- The Data API is opt-in. Never rely on Supabase's automatic table exposure.
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT SELECT ON countries, regions, cities, event_categories, organizations, events, event_sources TO anon;
+GRANT SELECT ON countries, regions, cities, event_categories, organizations, events, event_sources,
+  profiles, organization_members, organization_documents, event_reports, audit_logs, notifications
+  TO authenticated;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;
+
+-- Public reference data is read-only.
+CREATE POLICY "Public read countries"
+ON countries FOR SELECT
+TO anon, authenticated
+USING (TRUE);
+
+CREATE POLICY "Public read regions"
+ON regions FOR SELECT
+TO anon, authenticated
+USING (TRUE);
+
+CREATE POLICY "Public read cities"
+ON cities FOR SELECT
+TO anon, authenticated
+USING (TRUE);
+
+CREATE POLICY "Public read event categories"
+ON event_categories FOR SELECT
+TO anon, authenticated
+USING (TRUE);
+
+-- A signed-in user can only view or edit their own profile.
+CREATE POLICY "Users read own profile"
+ON profiles FOR SELECT
+TO authenticated
+USING (id = auth.uid());
+
+CREATE POLICY "Users update own profile"
+ON profiles FOR UPDATE
+TO authenticated
+USING (id = auth.uid())
+WITH CHECK (id = auth.uid());
+
+-- The public directory never exposes pending, rejected, or suspended organizations.
+CREATE POLICY "Public read verified organizations"
+ON organizations FOR SELECT
+TO anon, authenticated
+USING (
+  verification_status = 'verified'
+  AND organization_status = 'active'
+);
+
+CREATE POLICY "Admins manage organizations"
+ON organizations FOR ALL
+TO authenticated
+USING (
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
+)
+WITH CHECK (
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
+);
+
+CREATE POLICY "Members read own organization memberships"
+ON organization_members FOR SELECT
+TO authenticated
+USING (user_id = auth.uid());
+
 -- Events: Public can ONLY read published, public, non-deleted events
 CREATE POLICY "Public read published events"
 ON events FOR SELECT
-TO public
+TO anon, authenticated
 USING (
   status = 'published'
   AND visibility = 'public'
   AND deleted_at IS NULL
+);
+
+-- Only public sources belonging to a public event are visible without sign-in.
+CREATE POLICY "Public read public event sources"
+ON event_sources FOR SELECT
+TO anon, authenticated
+USING (
+  is_public = TRUE
+  AND EXISTS (
+    SELECT 1
+    FROM events
+    WHERE events.id = event_sources.event_id
+      AND events.status = 'published'
+      AND events.visibility = 'public'
+      AND events.deleted_at IS NULL
+  )
 );
 
 -- Events: Authenticated organization members can read their own organization's events
@@ -472,6 +568,20 @@ ON event_reports FOR SELECT
 TO authenticated
 USING (
   EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin', 'moderator'))
+);
+
+CREATE POLICY "Admins read organization verification history"
+ON organization_verification_history FOR SELECT
+TO authenticated
+USING (
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
+);
+
+CREATE POLICY "Admins read direct publishing history"
+ON direct_publishing_history FOR SELECT
+TO authenticated
+USING (
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
 );
 
 -- Notifications: Users only read their own notifications
