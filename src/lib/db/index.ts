@@ -66,6 +66,185 @@ interface OrganizationCreateOptions {
   requireCloudSync?: boolean;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function organizationFromDatabase(row: Record<string, unknown>): Organization {
+  return row as unknown as Organization;
+}
+
+async function getProductionAdminClient() {
+  const { createAdminClient } = await import('@/lib/supabase/admin');
+  return createAdminClient();
+}
+
+function countryCodeFor(name: string, offset: number = 0): string {
+  const knownCodes: Record<string, string> = {
+    iraq: 'IQ',
+    'العراق': 'IQ',
+    germany: 'DE',
+    deutschland: 'DE',
+    france: 'FR',
+    syria: 'SY',
+    'سوريا': 'SY',
+    turkey: 'TR',
+    'تركيا': 'TR',
+    netherlands: 'NL',
+    sweden: 'SE',
+    belgium: 'BE',
+    austria: 'AT',
+    unitedkingdom: 'GB',
+    usa: 'US',
+    'united states': 'US',
+  };
+  const normalized = name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  if (offset === 0 && knownCodes[normalized]) return knownCodes[normalized];
+
+  let hash = 0;
+  for (const character of normalized) hash = (hash * 31 + character.codePointAt(0)!) % 676;
+  const value = (hash + offset) % 676;
+  return String.fromCharCode(65 + Math.floor(value / 26), 65 + (value % 26));
+}
+
+async function resolveProductionLocation(
+  countryValue: string,
+  cityValue: string,
+  latitude: number,
+  longitude: number
+): Promise<{ countryId: string; cityId: string }> {
+  const client = await getProductionAdminClient();
+  const countryName = countryValue.trim() || 'Worldwide';
+  const cityName = cityValue.trim() || 'Worldwide';
+
+  let countryId: string | undefined;
+  if (UUID_PATTERN.test(countryValue)) {
+    const { data, error } = await client.from('countries').select('id').eq('id', countryValue).maybeSingle();
+    if (error) throw new Error('Unable to look up the selected country.');
+    countryId = data?.id as string | undefined;
+    if (!countryId) throw new Error('The selected country was not found.');
+  } else {
+    const { data, error } = await client
+      .from('countries')
+      .select('id')
+      .eq('name_en', countryName)
+      .maybeSingle();
+    if (error) throw new Error('Unable to look up the selected country.');
+    countryId = data?.id as string | undefined;
+  }
+
+  if (!countryId) {
+    for (let attempt = 0; attempt < 676; attempt += 1) {
+      const code = countryCodeFor(countryName, attempt);
+      const { data: codeMatch, error: codeLookupError } = await client
+        .from('countries')
+        .select('id, name_en')
+        .eq('code', code)
+        .maybeSingle();
+      if (codeLookupError) throw new Error('Unable to reserve a country code.');
+      if (codeMatch?.name_en && codeMatch.name_en !== countryName) continue;
+      if (codeMatch?.id) {
+        countryId = codeMatch.id as string;
+        break;
+      }
+
+      const { data: createdCountry, error: countryCreateError } = await client
+        .from('countries')
+        .insert({
+          code,
+          name_en: countryName,
+          name_ar: countryName,
+          name_de: countryName,
+          name_fr: countryName,
+        })
+        .select('id')
+        .single();
+      if (!countryCreateError && createdCountry?.id) {
+        countryId = createdCountry.id as string;
+        break;
+      }
+    }
+  }
+  if (!countryId) throw new Error('Unable to create the selected country.');
+
+  if (UUID_PATTERN.test(cityValue)) {
+    const { data, error } = await client
+      .from('cities')
+      .select('id')
+      .eq('id', cityValue)
+      .eq('country_id', countryId)
+      .maybeSingle();
+    if (error) throw new Error('Unable to look up the selected city.');
+    if (data?.id) return { countryId, cityId: data.id as string };
+    throw new Error('The selected city was not found.');
+  } else {
+    const { data, error } = await client
+      .from('cities')
+      .select('id')
+      .eq('country_id', countryId)
+      .eq('name_en', cityName)
+      .maybeSingle();
+    if (error) throw new Error('Unable to look up the selected city.');
+    if (data?.id) return { countryId, cityId: data.id as string };
+  }
+
+  const { data: createdCity, error: cityCreateError } = await client
+    .from('cities')
+    .insert({
+      country_id: countryId,
+      name_en: cityName,
+      name_ar: cityName,
+      name_de: cityName,
+      name_fr: cityName,
+      latitude,
+      longitude,
+    })
+    .select('id')
+    .single();
+  if (cityCreateError || !createdCity?.id) throw new Error('Unable to create the selected city.');
+
+  return { countryId, cityId: createdCity.id as string };
+}
+
+function organizationWriteData(org: Partial<Organization>): Record<string, unknown> {
+  const fields: Array<keyof Organization> = [
+    'name',
+    'slug',
+    'logo',
+    'cover_image',
+    'description',
+    'organization_type',
+    'country_id',
+    'region_id',
+    'city_id',
+    'postal_code',
+    'street',
+    'house_number',
+    'full_address',
+    'latitude',
+    'longitude',
+    'website',
+    'email',
+    'phone',
+    'organization_status',
+    'verification_status',
+    'verified_at',
+    'verified_by',
+    'verification_notes',
+    'direct_publishing_enabled',
+    'is_demo',
+    'updated_at',
+  ];
+  const data = Object.fromEntries(
+    fields.flatMap((field) =>
+      Object.prototype.hasOwnProperty.call(org, field) && org[field] !== undefined ? [[field, org[field]]] : []
+    )
+  ) as Record<string, unknown>;
+
+  if (typeof data.verified_by === 'string' && !UUID_PATTERN.test(data.verified_by)) {
+    data.verified_by = null;
+  }
+  return data;
+}
+
 export const db = {
   events: {
     async findPublicEvents(filters: PublicEventFilters = {}): Promise<EventItem[]> {
@@ -356,6 +535,17 @@ export const db = {
 
   organizations: {
     async findVerifiedPublic(): Promise<Organization[]> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient())
+          .from('organizations')
+          .select('*')
+          .eq('verification_status', 'verified')
+          .eq('organization_status', 'active')
+          .order('created_at', { ascending: false });
+        if (error) throw new Error('Unable to load verified organizations.');
+        return (data || []).map((organization) => organizationFromDatabase(organization));
+      }
+
       const cloudOrgs = await CloudSync.getOrganizations();
       const existingIds = new Set(memory.organizations.map((o) => o.id));
       for (const org of cloudOrgs) {
@@ -379,6 +569,16 @@ export const db = {
 
     async findBySlug(slug: string): Promise<Organization | null> {
       const decoded = decodeURIComponent(slug).toLowerCase().trim();
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient())
+          .from('organizations')
+          .select('*')
+          .ilike('slug', decoded)
+          .maybeSingle();
+        if (error) throw new Error('Unable to load the organization.');
+        return data ? organizationFromDatabase(data) : null;
+      }
+
       let org = memory.organizations.find(
         (o) =>
           o.slug.toLowerCase() === decoded ||
@@ -403,6 +603,12 @@ export const db = {
     },
 
     async findById(id: string): Promise<Organization | null> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient()).from('organizations').select('*').eq('id', id).maybeSingle();
+        if (error) throw new Error('Unable to load the organization.');
+        return data ? organizationFromDatabase(data) : null;
+      }
+
       let org = memory.organizations.find((o) => o.id === id);
       if (!org) {
         const cloudOrgs = await CloudSync.getOrganizations();
@@ -416,6 +622,18 @@ export const db = {
 
     async findByEmail(email: string): Promise<Organization | null> {
       const em = email.toLowerCase().trim();
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient())
+          .from('organizations')
+          .select('*')
+          .ilike('email', em)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) throw new Error('Unable to load the organization.');
+        return data ? organizationFromDatabase(data) : null;
+      }
+
       let org = memory.organizations.find((o) => o.email?.toLowerCase().trim() === em);
       if (!org) {
         const cloudOrgs = await CloudSync.getOrganizations();
@@ -428,6 +646,15 @@ export const db = {
     },
 
     async findAllAdmin(): Promise<Organization[]> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient())
+          .from('organizations')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (error) throw new Error('Unable to load organizations.');
+        return (data || []).map((organization) => organizationFromDatabase(organization));
+      }
+
       const cloudOrgs = await CloudSync.getOrganizations();
       const existingIds = new Set(memory.organizations.map((o) => o.id));
       for (const org of cloudOrgs) {
@@ -452,6 +679,23 @@ export const db = {
       orgData: Omit<Organization, 'id' | 'created_at' | 'updated_at'>,
       options: OrganizationCreateOptions = {}
     ): Promise<Organization> {
+      if (isProduction) {
+        const { countryId, cityId } = await resolveProductionLocation(
+          orgData.country_id,
+          orgData.city_id,
+          orgData.latitude,
+          orgData.longitude
+        );
+        const payload = organizationWriteData({
+          ...orgData,
+          country_id: countryId,
+          city_id: cityId,
+        });
+        const { data, error } = await (await getProductionAdminClient()).from('organizations').insert(payload).select('*').single();
+        if (error || !data) throw new Error('Unable to save the organization registration.');
+        return organizationFromDatabase(data);
+      }
+
       const newOrg: Organization = {
         ...orgData,
         id: `org-${Date.now()}`,
@@ -469,6 +713,22 @@ export const db = {
     },
 
     async update(id: string, updates: Partial<Organization>): Promise<Organization | null> {
+      if (isProduction) {
+        const payload = organizationWriteData({
+          ...updates,
+          ...(updates.organization_status === 'suspended' ? { direct_publishing_enabled: false } : {}),
+          updated_at: new Date().toISOString(),
+        });
+        const { data, error } = await (await getProductionAdminClient())
+          .from('organizations')
+          .update(payload)
+          .eq('id', id)
+          .select('*')
+          .maybeSingle();
+        if (error) throw new Error('Unable to update the organization.');
+        return data ? organizationFromDatabase(data) : null;
+      }
+
       const index = memory.organizations.findIndex((o) => o.id === id);
       if (index === -1) {
         // Attempt cloud update

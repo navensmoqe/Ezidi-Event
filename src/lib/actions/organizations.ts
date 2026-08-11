@@ -9,6 +9,7 @@ import { UserRole, Organization } from '@/types/database';
 import { revalidatePath } from 'next/cache';
 import { headers } from 'next/headers';
 import { getCurrentUserSession } from '@/lib/actions/auth';
+import { isProduction } from '@/lib/config/env';
 
 function normalizeUrl(url?: string | null): string | null {
   if (!url || !url.trim()) return null;
@@ -82,7 +83,7 @@ export async function registerOrganizationAction(formData: unknown, userContext?
   let resolvedCityId = data.city_id;
   let resolvedCountryId = data.country_id;
 
-  if (data.city_id && (data.city_id.startsWith('custom:') || !data.city_id.startsWith('city-'))) {
+  if (!isProduction && data.city_id && (data.city_id.startsWith('custom:') || !data.city_id.startsWith('city-'))) {
     const rawCityName = data.city_id.replace(/^custom:/, '');
     const cityObj = await db.cities.findOrCreateByName(rawCityName, resolvedCountryId, data.latitude, data.longitude);
     resolvedCityId = cityObj.id;
@@ -113,7 +114,7 @@ export async function registerOrganizationAction(formData: unknown, userContext?
         organization_status: 'active',
         verification_status: 'pending',
         direct_publishing_enabled: false,
-        is_demo: true,
+        is_demo: false,
       },
       { requireCloudSync: true }
     );
