@@ -6,6 +6,7 @@ import { useOrgLanguage } from '@/components/organization/OrgLanguageProvider';
 import { EventCategory, Country, City, Organization } from '@/types/database';
 import { POPULAR_TIMEZONES } from '@/lib/utils/timezone';
 import { SmartLocationManager, LocationData } from '@/components/maps/SmartLocationManager';
+import { PosterUploadField } from '@/components/events/PosterUploadField';
 import { createEventAction } from '@/lib/actions/events';
 import {
   Calendar,
@@ -338,18 +339,11 @@ export function OrgAddEventClientForm({
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              {isRtl ? 'رابط بوستر / صورة الفعالية' : 'Poster Image URL'}
-            </label>
-            <input
-              type="text"
-              value={formData.poster_url}
-              onChange={(e) => setFormData({ ...formData, poster_url: e.target.value })}
-              placeholder="https://example.com/poster.jpg"
-              className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-            />
-          </div>
+          <PosterUploadField
+            value={formData.poster_url}
+            onChange={(poster_url) => setFormData((current) => ({ ...current, poster_url }))}
+            isRtl={isRtl}
+          />
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">

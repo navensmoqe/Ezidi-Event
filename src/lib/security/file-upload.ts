@@ -16,7 +16,8 @@ export const UPLOAD_LIMITS = {
   POSTER: {
     allowedExtensions: ['.jpg', '.jpeg', '.png', '.webp'],
     allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
-    maxSizeBytes: 5 * 1024 * 1024, // 5 MB
+    // Vercel serverless requests must remain comfortably below their body-size limit.
+    maxSizeBytes: 4 * 1024 * 1024, // 4 MB
   },
   DOCUMENT: {
     allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png'],
@@ -103,6 +104,29 @@ export function validateUploadedFile(
     valid: true,
     sanitizedFilename: sanitized,
   };
+}
+
+/**
+ * Verifies that an uploaded image has the expected binary signature. MIME types
+ * and filename extensions are user-controlled, so they are not enough on their own.
+ */
+export function hasValidImageSignature(buffer: Uint8Array, mimeType: string): boolean {
+  if (mimeType === 'image/jpeg') {
+    return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  }
+
+  if (mimeType === 'image/png') {
+    const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    return pngSignature.every((byte, index) => buffer[index] === byte);
+  }
+
+  if (mimeType === 'image/webp') {
+    const header = String.fromCharCode(...buffer.slice(0, 4));
+    const webp = String.fromCharCode(...buffer.slice(8, 12));
+    return header === 'RIFF' && webp === 'WEBP';
+  }
+
+  return false;
 }
 
 /**
