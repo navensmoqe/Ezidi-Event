@@ -229,6 +229,64 @@ export async function suspendOrganizationAction(
   return { success: true };
 }
 
+export async function reactivateOrganizationAction(
+  orgId: string,
+  reason: string,
+  adminContext: { id: string; role: UserRole; email: string }
+) {
+  if (adminContext.role !== 'super_admin' && adminContext.role !== 'admin') {
+    return { success: false, error: 'Unauthorized: Only administrators can reactivate organizations.' };
+  }
+
+  if (!reason || reason.trim().length < 5) {
+    return { success: false, error: 'A mandatory reason is required to reactivate an organization.' };
+  }
+
+  const org = await db.organizations.findById(orgId);
+  if (!org) return { success: false, error: 'Organization not found.' };
+  if (org.organization_status !== 'suspended') {
+    return { success: false, error: 'Only suspended organizations can be reactivated.' };
+  }
+
+  // Reactivation restores access but never restores publishing privileges automatically.
+  // A fresh verification is required before the organization can publish again.
+  await db.organizations.update(orgId, {
+    organization_status: 'active',
+    verification_status: 'pending',
+    verified_at: null,
+    verified_by: null,
+    direct_publishing_enabled: false,
+  });
+
+  await logAuditEvent({
+    actor_id: adminContext.id,
+    actor_email: adminContext.email,
+    actor_role: adminContext.role,
+    action: 'ORGANIZATION_REACTIVATED',
+    entity_type: 'organization',
+    entity_id: orgId,
+    reason,
+    previous_values: {
+      organization_status: org.organization_status,
+      verification_status: org.verification_status,
+      direct_publishing_enabled: org.direct_publishing_enabled,
+    },
+    new_values: {
+      organization_status: 'active',
+      verification_status: 'pending',
+      direct_publishing_enabled: false,
+    },
+  });
+
+  try {
+    revalidatePath('/admin/organizations');
+    revalidatePath('/admin/submissions');
+    revalidatePath('/admin');
+  } catch {}
+
+  return { success: true };
+}
+
 export async function updateOrganizationProfileAction(
   orgId: string,
   formData: Partial<Organization>,

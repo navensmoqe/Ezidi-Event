@@ -7,6 +7,7 @@ import { verifyOrganizationAction } from '@/lib/actions/admin';
 import {
   toggleDirectPublishingAction,
   suspendOrganizationAction,
+  reactivateOrganizationAction,
   registerOrganizationAction,
   adminResetOrgPasswordAction,
 } from '@/lib/actions/organizations';
@@ -28,6 +29,7 @@ import {
   Copy,
   CheckCircle2,
   Lock,
+  RotateCcw,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -152,7 +154,7 @@ export function AdminOrgsClient({ initialOrganizations }: AdminOrgsClientProps) 
     open: boolean;
     orgId: string;
     orgName: string;
-    actionType: 'toggle_direct_pub' | 'suspend';
+    actionType: 'toggle_direct_pub' | 'suspend' | 'reactivate';
     targetValue?: boolean;
   }>({
     open: false,
@@ -294,6 +296,24 @@ export function AdminOrgsClient({ initialOrganizations }: AdminOrgsClientProps) 
                   organization_status: 'suspended',
                   direct_publishing_enabled: false,
                   verification_status: 'suspended',
+                }
+              : o
+          )
+        );
+      }
+    } else if (modalState.actionType === 'reactivate') {
+      const res = await reactivateOrganizationAction(modalState.orgId, reason, adminContext);
+      if (res.success) {
+        setOrgs((prev) =>
+          prev.map((o) =>
+            o.id === modalState.orgId
+              ? {
+                  ...o,
+                  organization_status: 'active',
+                  verification_status: 'pending',
+                  verified_at: null,
+                  verified_by: null,
+                  direct_publishing_enabled: false,
                 }
               : o
           )
@@ -472,7 +492,7 @@ export function AdminOrgsClient({ initialOrganizations }: AdminOrgsClientProps) 
                         <span>{isRtl ? 'بيانات الدخول' : 'Credentials'}</span>
                       </button>
 
-                      {org.verification_status !== 'verified' && (
+                      {org.organization_status === 'active' && org.verification_status !== 'verified' && (
                         <button
                           onClick={() => handleVerify(org.id)}
                           className="px-2.5 py-1.5 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 font-bold text-xs border border-emerald-700/50 flex items-center gap-1"
@@ -482,26 +502,28 @@ export function AdminOrgsClient({ initialOrganizations }: AdminOrgsClientProps) 
                         </button>
                       )}
 
-                      <button
-                        onClick={() =>
-                          setModalState({
-                            open: true,
-                            orgId: org.id,
-                            orgName: org.name,
-                            actionType: 'toggle_direct_pub',
-                            targetValue: !org.direct_publishing_enabled,
-                          })
-                        }
-                        className={`px-2.5 py-1.5 rounded-lg font-semibold text-xs border transition-colors ${
-                          org.direct_publishing_enabled
-                            ? 'bg-amber-950/60 hover:bg-amber-900/60 text-amber-300 border-amber-800'
-                            : 'bg-indigo-950/60 hover:bg-indigo-900/60 text-indigo-300 border-indigo-800'
-                        }`}
-                      >
-                        {org.direct_publishing_enabled
-                          ? (isRtl ? 'تعطيل النشر' : 'Disable Pub')
-                          : (isRtl ? 'منح النشر' : 'Grant Pub')}
-                      </button>
+                      {org.organization_status === 'active' && (
+                        <button
+                          onClick={() =>
+                            setModalState({
+                              open: true,
+                              orgId: org.id,
+                              orgName: org.name,
+                              actionType: 'toggle_direct_pub',
+                              targetValue: !org.direct_publishing_enabled,
+                            })
+                          }
+                          className={`px-2.5 py-1.5 rounded-lg font-semibold text-xs border transition-colors ${
+                            org.direct_publishing_enabled
+                              ? 'bg-amber-950/60 hover:bg-amber-900/60 text-amber-300 border-amber-800'
+                              : 'bg-indigo-950/60 hover:bg-indigo-900/60 text-indigo-300 border-indigo-800'
+                          }`}
+                        >
+                          {org.direct_publishing_enabled
+                            ? (isRtl ? 'تعطيل النشر' : 'Disable Pub')
+                            : (isRtl ? 'منح النشر' : 'Grant Pub')}
+                        </button>
+                      )}
 
                       {org.organization_status === 'active' && (
                         <button
@@ -516,6 +538,23 @@ export function AdminOrgsClient({ initialOrganizations }: AdminOrgsClientProps) 
                           className="px-2 py-1.5 rounded-lg bg-red-950/60 hover:bg-red-900/60 text-red-400 font-semibold text-xs border border-red-800"
                         >
                           {isRtl ? 'تعليق' : 'Suspend'}
+                        </button>
+                      )}
+
+                      {org.organization_status === 'suspended' && (
+                        <button
+                          onClick={() =>
+                            setModalState({
+                              open: true,
+                              orgId: org.id,
+                              orgName: org.name,
+                              actionType: 'reactivate',
+                            })
+                          }
+                          className="px-2.5 py-1.5 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 font-semibold text-xs border border-emerald-700/60 flex items-center gap-1"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>{isRtl ? 'إعادة تفعيل' : 'Reactivate'}</span>
                         </button>
                       )}
                     </div>
@@ -759,9 +798,13 @@ export function AdminOrgsClient({ initialOrganizations }: AdminOrgsClientProps) 
                 ? isRtl
                   ? `أنت على وشك ${modalState.targetValue ? 'منح' : 'تعطيل'} صلاحية النشر المباشر لمنظمة "${modalState.orgName}". يرجى كتابة السبب للتدقيق.`
                   : `You are modifying direct publishing for "${modalState.orgName}". Reason is logged for audit.`
-                : isRtl
-                ? `أنت على وشك تعليق منظمة "${modalState.orgName}". سيتم إيقاف صلاحياتها فوراً.`
-                : `You are about to suspend "${modalState.orgName}". All permissions will be revoked.`}
+                : modalState.actionType === 'reactivate'
+                  ? isRtl
+                    ? `أنت على وشك إعادة تفعيل منظمة "${modalState.orgName}". ستعود نشطة، لكن ستحتاج إلى توثيق جديد قبل منح النشر المباشر.`
+                    : `You are about to reactivate "${modalState.orgName}". It will require fresh verification before direct publishing can be granted.`
+                  : isRtl
+                    ? `أنت على وشك تعليق منظمة "${modalState.orgName}". سيتم إيقاف صلاحياتها فوراً.`
+                    : `You are about to suspend "${modalState.orgName}". All permissions will be revoked.`}
             </p>
 
             <form onSubmit={handleExecuteAction} className="space-y-4">
