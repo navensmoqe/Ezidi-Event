@@ -93,6 +93,12 @@ export default async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(`/organization${localeOrgMatch[2] || ''}`, request.url));
   }
 
+  // Authentication endpoints must keep their non-localized URLs. In particular,
+  // Supabase sends users to /auth/callback before the app can establish a session.
+  if (pathname.startsWith('/auth/')) {
+    return NextResponse.next({ request });
+  }
+
   const production = isSupabaseProduction();
   const auth = production
     ? await getProductionSession(request)
