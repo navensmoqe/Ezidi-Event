@@ -4,11 +4,54 @@ import { db } from '@/lib/db';
 import { logAuditEvent } from '@/lib/services/audit';
 import { NotificationService } from '@/lib/services/notifications';
 import { UserRole, EventVerificationStatus } from '@/types/database';
+import { getCurrentUserSession } from '@/lib/actions/auth';
+import { isProduction } from '@/lib/config/env';
+
+type AdminContext = { id: string; role: UserRole; email: string };
+
+async function getTrustedAdminContext(fallback: AdminContext): Promise<AdminContext | null> {
+  if (!isProduction) return fallback;
+  const session = await getCurrentUserSession();
+  if (!session || !['super_admin', 'admin', 'moderator', 'editor'].includes(session.role)) return null;
+  return { id: session.userId, role: session.role as UserRole, email: session.email };
+}
+
+async function provisionOrganizationOwner(orgId: string, email: string, fullName: string) {
+  if (!isProduction) return null;
+  const { createAdminClient } = await import('@/lib/supabase/admin');
+  const client = createAdminClient();
+  const normalizedEmail = email.toLowerCase().trim();
+  const { data: users, error: usersError } = await client.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (usersError) return 'تعذر تجهيز حساب مالك المنظمة في Supabase Auth.';
+  let user = users.users.find((candidate) => candidate.email?.toLowerCase() === normalizedEmail);
+  if (!user) {
+    const { data: invitation, error: invitationError } = await client.auth.admin.inviteUserByEmail(normalizedEmail, {
+      data: { full_name: fullName },
+    });
+    if (invitationError || !invitation.user) return 'تم التحقق، لكن تعذر إرسال دعوة دخول مالك المنظمة.';
+    user = invitation.user;
+  }
+  const { error: profileError } = await client.from('profiles').upsert({
+    id: user.id,
+    email: user.email || normalizedEmail,
+    full_name: user.user_metadata?.full_name || fullName,
+    role: 'organization_owner',
+  });
+  if (profileError) return 'تم التحقق، لكن لم يكتمل إنشاء ملف مالك المنظمة.';
+  const { error: memberError } = await client.from('organization_members').upsert(
+    { organization_id: orgId, user_id: user.id, role: 'owner', is_active: true },
+    { onConflict: 'organization_id,user_id' }
+  );
+  return memberError ? 'تم التحقق، لكن لم يكتمل ربط مالك المنظمة بالمنظمة.' : null;
+}
 
 export async function approveSubmissionAction(
   eventId: string,
   adminContext: { id: string; role: UserRole; email: string }
 ) {
+  const trustedAdmin = await getTrustedAdminContext(adminContext);
+  if (!trustedAdmin) return { success: false, error: 'Unauthorized: Admin privileges required.' };
+  adminContext = trustedAdmin;
   if (!['super_admin', 'admin', 'moderator', 'editor'].includes(adminContext.role)) {
     return { success: false, error: 'Unauthorized: Admin privileges required.' };
   }
@@ -52,6 +95,9 @@ export async function rejectSubmissionAction(
   reason: string,
   adminContext: { id: string; role: UserRole; email: string }
 ) {
+  const trustedAdmin = await getTrustedAdminContext(adminContext);
+  if (!trustedAdmin) return { success: false, error: 'Unauthorized: Admin privileges required.' };
+  adminContext = trustedAdmin;
   if (!['super_admin', 'admin', 'moderator'].includes(adminContext.role)) {
     return { success: false, error: 'Unauthorized: Admin privileges required.' };
   }
@@ -98,6 +144,9 @@ export async function updateEventVerificationAction(
   reason: string,
   adminContext: { id: string; role: UserRole; email: string }
 ) {
+  const trustedAdmin = await getTrustedAdminContext(adminContext);
+  if (!trustedAdmin) return { success: false, error: 'Unauthorized.' };
+  adminContext = trustedAdmin;
   if (!['super_admin', 'admin', 'moderator'].includes(adminContext.role)) {
     return { success: false, error: 'Unauthorized.' };
   }
@@ -128,6 +177,9 @@ export async function resolvePendingChangeAction(
   reason: string,
   adminContext: { id: string; role: UserRole; email: string }
 ) {
+  const trustedAdmin = await getTrustedAdminContext(adminContext);
+  if (!trustedAdmin) return { success: false, error: 'Unauthorized.' };
+  adminContext = trustedAdmin;
   if (!['super_admin', 'admin', 'moderator'].includes(adminContext.role)) {
     return { success: false, error: 'Unauthorized.' };
   }
@@ -153,6 +205,9 @@ export async function verifyOrganizationAction(
   notes: string,
   adminContext: { id: string; role: UserRole; email: string }
 ) {
+  const trustedAdmin = await getTrustedAdminContext(adminContext);
+  if (!trustedAdmin) return { success: false, error: 'Unauthorized: Only administrators can verify organizations.' };
+  adminContext = trustedAdmin;
   if (adminContext.role !== 'super_admin' && adminContext.role !== 'admin') {
     return { success: false, error: 'Unauthorized: Only administrators can verify organizations.' };
   }
@@ -179,7 +234,8 @@ export async function verifyOrganizationAction(
     new_values: { verification_status: 'verified' },
   });
 
-  return { success: true };
+  const ownerInvitationError = await provisionOrganizationOwner(org.id, org.email, org.name);
+  return { success: true, ownerInvitationError };
 }
 
 export async function updateUserRoleAction(
@@ -187,6 +243,9 @@ export async function updateUserRoleAction(
   role: UserRole,
   adminContext: { id: string; role: UserRole; email: string }
 ) {
+  const trustedAdmin = await getTrustedAdminContext(adminContext);
+  if (!trustedAdmin) return { success: false, error: 'Unauthorized: Only Administrators can alter user roles.' };
+  adminContext = trustedAdmin;
   if (adminContext.role !== 'super_admin' && adminContext.role !== 'admin') {
     return { success: false, error: 'Unauthorized: Only Administrators can alter user roles.' };
   }
@@ -214,6 +273,9 @@ export async function createUserAction(
   userData: { full_name: string; email: string; role: UserRole; is_active?: boolean; is_2fa_enabled?: boolean },
   adminContext: { id: string; role: UserRole; email: string }
 ) {
+  const trustedAdmin = await getTrustedAdminContext(adminContext);
+  if (!trustedAdmin) return { success: false, error: 'Unauthorized: Only Administrators can add new users.' };
+  adminContext = trustedAdmin;
   if (adminContext.role !== 'super_admin' && adminContext.role !== 'admin') {
     return { success: false, error: 'Unauthorized: Only Administrators can add new users.' };
   }
@@ -257,6 +319,9 @@ export async function updateUserAction(
   updates: { full_name?: string; email?: string; role?: UserRole; is_active?: boolean; is_2fa_enabled?: boolean },
   adminContext: { id: string; role: UserRole; email: string }
 ) {
+  const trustedAdmin = await getTrustedAdminContext(adminContext);
+  if (!trustedAdmin) return { success: false, error: 'Unauthorized: Only Administrators can modify users.' };
+  adminContext = trustedAdmin;
   if (adminContext.role !== 'super_admin' && adminContext.role !== 'admin') {
     return { success: false, error: 'Unauthorized: Only Administrators can modify users.' };
   }
@@ -284,6 +349,9 @@ export async function deleteUserAction(
   userId: string,
   adminContext: { id: string; role: UserRole; email: string }
 ) {
+  const trustedAdmin = await getTrustedAdminContext(adminContext);
+  if (!trustedAdmin) return { success: false, error: 'Unauthorized: Only Super Administrators can delete users.' };
+  adminContext = trustedAdmin;
   if (adminContext.role !== 'super_admin') {
     return { success: false, error: 'Unauthorized: Only Super Administrators can delete users.' };
   }
@@ -310,6 +378,9 @@ export async function createCategoryAction(
   catData: { name_en: string; name_ar: string; name_de?: string; name_fr?: string; slug?: string; description?: string; icon_name?: string },
   adminContext: { id: string; role: UserRole; email: string }
 ) {
+  const trustedAdmin = await getTrustedAdminContext(adminContext);
+  if (!trustedAdmin) return { success: false, error: 'Unauthorized: Only Administrators can create categories.' };
+  adminContext = trustedAdmin;
   if (adminContext.role !== 'super_admin' && adminContext.role !== 'admin') {
     return { success: false, error: 'Unauthorized: Only Administrators can create categories.' };
   }
@@ -347,6 +418,9 @@ export async function updateCategoryAction(
   updates: { name_en?: string; name_ar?: string; name_de?: string; name_fr?: string; slug?: string; description?: string; icon_name?: string },
   adminContext: { id: string; role: UserRole; email: string }
 ) {
+  const trustedAdmin = await getTrustedAdminContext(adminContext);
+  if (!trustedAdmin) return { success: false, error: 'Unauthorized: Only Administrators can edit categories.' };
+  adminContext = trustedAdmin;
   if (adminContext.role !== 'super_admin' && adminContext.role !== 'admin') {
     return { success: false, error: 'Unauthorized: Only Administrators can edit categories.' };
   }
@@ -371,6 +445,9 @@ export async function deleteCategoryAction(
   catId: string,
   adminContext: { id: string; role: UserRole; email: string }
 ) {
+  const trustedAdmin = await getTrustedAdminContext(adminContext);
+  if (!trustedAdmin) return { success: false, error: 'Unauthorized: Only Administrators can delete categories.' };
+  adminContext = trustedAdmin;
   if (adminContext.role !== 'super_admin' && adminContext.role !== 'admin') {
     return { success: false, error: 'Unauthorized: Only Administrators can delete categories.' };
   }
@@ -388,4 +465,3 @@ export async function deleteCategoryAction(
 
   return { success: true };
 }
-

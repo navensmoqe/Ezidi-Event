@@ -245,9 +245,163 @@ function organizationWriteData(org: Partial<Organization>): Record<string, unkno
   return data;
 }
 
+function eventFromDatabase(row: Record<string, unknown>): EventItem {
+  return row as unknown as EventItem;
+}
+
+function eventWriteData(event: Partial<EventItem>): Record<string, unknown> {
+  const fields: Array<keyof EventItem> = [
+    'slug', 'title', 'title_ar', 'title_de', 'title_fr', 'description', 'description_ar',
+    'description_de', 'description_fr', 'category_id', 'date', 'start_time', 'end_time',
+    'timezone', 'country_id', 'region_id', 'city_id', 'postal_code', 'street', 'house_number',
+    'full_address', 'latitude', 'longitude', 'google_maps_url', 'organization_id', 'organizer_name',
+    'poster_url', 'status', 'visibility', 'event_verification_status', 'is_featured', 'is_demo',
+    'source_url', 'contact_email', 'contact_phone', 'official_website', 'deleted_at', 'created_by',
+    'updated_at',
+  ];
+  const data = Object.fromEntries(
+    fields.flatMap((field) =>
+      Object.prototype.hasOwnProperty.call(event, field) && event[field] !== undefined ? [[field, event[field]]] : []
+    )
+  ) as Record<string, unknown>;
+
+  for (const field of ['organization_id', 'created_by', 'region_id']) {
+    if (typeof data[field] === 'string' && !UUID_PATTERN.test(data[field] as string)) data[field] = null;
+  }
+  return data;
+}
+
+function categoryFallback(value: string): EventCategory {
+  const matching = INITIAL_CATEGORIES.find((category) => category.id === value || category.slug === value);
+  if (matching) return matching;
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') || 'general';
+  return {
+    id: '',
+    slug,
+    name_en: value || 'General',
+    name_ar: value || 'عام',
+    name_de: value || 'Allgemein',
+    name_fr: value || 'Général',
+    icon_name: 'Tag',
+  };
+}
+
+async function resolveProductionCategory(categoryValue: string): Promise<string> {
+  const client = await getProductionAdminClient();
+  if (UUID_PATTERN.test(categoryValue)) {
+    const { data, error } = await client.from('event_categories').select('id').eq('id', categoryValue).maybeSingle();
+    if (error || !data?.id) throw new Error('The selected event category was not found.');
+    return data.id as string;
+  }
+
+  const fallback = categoryFallback(categoryValue);
+  const { data: existing, error: lookupError } = await client
+    .from('event_categories')
+    .select('id')
+    .eq('slug', fallback.slug)
+    .maybeSingle();
+  if (lookupError) throw new Error('Unable to look up the selected event category.');
+  if (existing?.id) return existing.id as string;
+
+  const { data: created, error: createError } = await client
+    .from('event_categories')
+    .insert({
+      slug: fallback.slug,
+      name_en: fallback.name_en,
+      name_ar: fallback.name_ar,
+      name_de: fallback.name_de,
+      name_fr: fallback.name_fr,
+      description: fallback.description || null,
+      icon_name: fallback.icon_name || null,
+    })
+    .select('id')
+    .single();
+  if (createError || !created?.id) throw new Error('Unable to create the selected event category.');
+  return created.id as string;
+}
+
+async function hydrateProductionEvent(row: Record<string, unknown>, includePrivateSources = false): Promise<EventItem> {
+  const client = await getProductionAdminClient();
+  const event = eventFromDatabase(row);
+  const [category, country, city, organization, sources] = await Promise.all([
+    client.from('event_categories').select('*').eq('id', event.category_id).maybeSingle(),
+    client.from('countries').select('*').eq('id', event.country_id).maybeSingle(),
+    client.from('cities').select('*').eq('id', event.city_id).maybeSingle(),
+    event.organization_id
+      ? client.from('organizations').select('*').eq('id', event.organization_id).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    client.from('event_sources').select('*').eq('event_id', event.id),
+  ]);
+
+  if (category.error || country.error || city.error || organization.error || sources.error) {
+    throw new Error('Unable to load event details.');
+  }
+
+  return {
+    ...event,
+    category: category.data ? (category.data as EventCategory) : undefined,
+    country: country.data ? (country.data as Country) : undefined,
+    city: city.data ? (city.data as City) : undefined,
+    organization: organization.data ? organizationFromDatabase(organization.data) : undefined,
+    sources: (sources.data || [])
+      .filter((source: Record<string, unknown>) => includePrivateSources || source.is_public === true)
+      .map(({ evidence_file: _evidenceFile, ...source }: Record<string, unknown>) => source as any),
+  };
+}
+
 export const db = {
   events: {
     async findPublicEvents(filters: PublicEventFilters = {}): Promise<EventItem[]> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient())
+          .from('events')
+          .select('*')
+          .in('status', ['published', 'cancelled', 'postponed'])
+          .eq('visibility', 'public')
+          .is('deleted_at', null)
+          .order('date', { ascending: true });
+        if (error) throw new Error('Unable to load public events.');
+
+        let results = await Promise.all((data || []).map((event) => hydrateProductionEvent(event)));
+        if (filters.category && filters.category !== 'all') {
+          results = results.filter((event) => event.category_id === filters.category || event.category?.slug === filters.category);
+        }
+        if (filters.country && filters.country !== 'all') {
+          results = results.filter((event) => event.country_id === filters.country || event.country?.code === filters.country);
+        }
+        if (filters.city && filters.city !== 'all') {
+          const cityFilter = filters.city.toLowerCase();
+          results = results.filter((event) => event.city_id === filters.city || event.city?.name_en.toLowerCase() === cityFilter);
+        }
+        if (filters.organization && filters.organization !== 'all') {
+          const organizationFilter = filters.organization.toLowerCase();
+          results = results.filter(
+            (event) =>
+              event.organization_id === filters.organization ||
+              event.organization?.slug.toLowerCase() === organizationFilter ||
+              event.organizer_name?.toLowerCase() === organizationFilter
+          );
+        }
+        if (filters.status && filters.status !== 'all') results = results.filter((event) => event.status === filters.status);
+        if (filters.dateFrom) results = results.filter((event) => event.date >= filters.dateFrom!);
+        if (filters.dateTo) results = results.filter((event) => event.date <= filters.dateTo!);
+        if (filters.search) {
+          const search = filters.search.toLowerCase();
+          results = results.filter((event) =>
+            [event.title, event.description, event.organizer_name, event.full_address]
+              .filter(Boolean)
+              .some((value) => value!.toLowerCase().includes(search))
+          );
+        }
+        if (filters.sort === 'newest') {
+          results.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        }
+        return results;
+      }
+
       const cloudEvents = await CloudSync.getEvents();
       const existingIds = new Set(memory.events.map((e) => e.id));
       for (const ev of cloudEvents) {
@@ -357,6 +511,19 @@ export const db = {
     },
 
     async findPublicBySlug(slug: string): Promise<EventItem | null> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient())
+          .from('events')
+          .select('*')
+          .eq('slug', slug)
+          .in('status', ['published', 'cancelled', 'postponed'])
+          .eq('visibility', 'public')
+          .is('deleted_at', null)
+          .maybeSingle();
+        if (error) throw new Error('Unable to load the event.');
+        return data ? hydrateProductionEvent(data) : null;
+      }
+
       const event = memory.events.find(
         (e) =>
           e.slug === slug &&
@@ -383,6 +550,12 @@ export const db = {
     },
 
     async findById(id: string): Promise<EventItem | null> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient()).from('events').select('*').eq('id', id).maybeSingle();
+        if (error) throw new Error('Unable to load the event.');
+        return data ? hydrateProductionEvent(data, true) : null;
+      }
+
       const event = memory.events.find((e) => e.id === id);
       if (!event) return null;
       return {
@@ -397,6 +570,21 @@ export const db = {
     },
 
     async findAllAdmin(filters: { status?: string; search?: string } = {}): Promise<EventItem[]> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient())
+          .from('events')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (error) throw new Error('Unable to load events.');
+        let results = await Promise.all((data || []).map((event) => hydrateProductionEvent(event, true)));
+        if (filters.status && filters.status !== 'all') results = results.filter((event) => event.status === filters.status);
+        if (filters.search) {
+          const search = filters.search.toLowerCase();
+          results = results.filter((event) => event.title.toLowerCase().includes(search));
+        }
+        return results;
+      }
+
       const cloudEvents = await CloudSync.getEvents();
       const existingIds = new Set(memory.events.map((e) => e.id));
       for (const ev of cloudEvents) {
@@ -433,6 +621,22 @@ export const db = {
     },
 
     async create(eventData: Omit<EventItem, 'id' | 'created_at' | 'updated_at'>): Promise<EventItem> {
+      if (isProduction) {
+        const [categoryId, location] = await Promise.all([
+          resolveProductionCategory(eventData.category_id),
+          resolveProductionLocation(eventData.country_id, eventData.city_id, eventData.latitude, eventData.longitude),
+        ]);
+        const payload = eventWriteData({
+          ...eventData,
+          category_id: categoryId,
+          country_id: location.countryId,
+          city_id: location.cityId,
+        });
+        const { data, error } = await (await getProductionAdminClient()).from('events').insert(payload).select('*').single();
+        if (error || !data) throw new Error('Unable to save the event.');
+        return hydrateProductionEvent(data, true);
+      }
+
       const newEvent: EventItem = {
         ...eventData,
         id: `event-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -445,6 +649,18 @@ export const db = {
     },
 
     async update(id: string, updates: Partial<EventItem>): Promise<EventItem | null> {
+      if (isProduction) {
+        const payload = eventWriteData({ ...updates, updated_at: new Date().toISOString() });
+        const { data, error } = await (await getProductionAdminClient())
+          .from('events')
+          .update(payload)
+          .eq('id', id)
+          .select('*')
+          .maybeSingle();
+        if (error) throw new Error('Unable to update the event.');
+        return data ? hydrateProductionEvent(data, true) : null;
+      }
+
       const index = memory.events.findIndex((e) => e.id === id);
       if (index === -1) {
         await CloudSync.updateEvent(id, updates);
@@ -461,6 +677,15 @@ export const db = {
     },
 
     async softDelete(id: string): Promise<boolean> {
+      if (isProduction) {
+        const { error } = await (await getProductionAdminClient())
+          .from('events')
+          .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+          .eq('id', id);
+        if (error) throw new Error('Unable to delete the event.');
+        return true;
+      }
+
       const index = memory.events.findIndex((e) => e.id === id);
       if (index !== -1) {
         memory.events[index].deleted_at = new Date().toISOString();
@@ -470,10 +695,28 @@ export const db = {
     },
 
     async getPendingChanges(): Promise<EventPendingChange[]> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient())
+          .from('event_pending_changes')
+          .select('*')
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
+        if (error) throw new Error('Unable to load pending event changes.');
+        return (data || []) as EventPendingChange[];
+      }
       return memory.pendingChanges.filter((c) => c.status === 'pending');
     },
 
     async submitPendingChange(change: Omit<EventPendingChange, 'id' | 'created_at'>): Promise<EventPendingChange> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient())
+          .from('event_pending_changes')
+          .insert(change)
+          .select('*')
+          .single();
+        if (error || !data) throw new Error('Unable to save the requested event changes.');
+        return data as EventPendingChange;
+      }
       const newChange: EventPendingChange = {
         ...change,
         id: `change-${Date.now()}`,
@@ -489,6 +732,28 @@ export const db = {
       adminId: string,
       notes?: string
     ): Promise<boolean> {
+      if (isProduction) {
+        const client = await getProductionAdminClient();
+        const { data: change, error: loadError } = await client
+          .from('event_pending_changes')
+          .select('*')
+          .eq('id', changeId)
+          .maybeSingle();
+        if (loadError || !change) return false;
+        const { error: updateError } = await client
+          .from('event_pending_changes')
+          .update({ status, reviewed_by: adminId, reviewed_at: new Date().toISOString(), admin_notes: notes || null })
+          .eq('id', changeId);
+        if (updateError) throw new Error('Unable to review the requested event changes.');
+        if (status === 'approved') {
+          const { error: eventError } = await client
+            .from('events')
+            .update(eventWriteData({ ...(change.proposed_data as Partial<EventItem>), updated_at: new Date().toISOString() }))
+            .eq('id', change.event_id);
+          if (eventError) throw new Error('Unable to apply the approved event changes.');
+        }
+        return true;
+      }
       const change = memory.pendingChanges.find((c) => c.id === changeId);
       if (!change) return false;
 
@@ -508,6 +773,31 @@ export const db = {
     },
 
     async getPublicStatistics() {
+      if (isProduction) {
+        const client = await getProductionAdminClient();
+        const { data: published, error: eventError } = await client
+          .from('events')
+          .select('country_id, city_id, date')
+          .eq('status', 'published')
+          .eq('visibility', 'public')
+          .is('deleted_at', null);
+        const { count: verifiedOrganizations, error: organizationError } = await client
+          .from('organizations')
+          .select('*', { count: 'exact', head: true })
+          .eq('verification_status', 'verified')
+          .eq('organization_status', 'active');
+        if (eventError || organizationError) throw new Error('Unable to load public statistics.');
+        const events = published || [];
+        const today = new Date().toISOString().split('T')[0];
+        return {
+          totalPublishedEvents: events.length,
+          totalCountries: new Set(events.map((event) => event.country_id)).size,
+          totalCities: new Set(events.map((event) => event.city_id)).size,
+          verifiedOrganizations: verifiedOrganizations || 0,
+          upcomingEventsCount: events.filter((event) => event.date >= today).length,
+          todayEventsCount: events.filter((event) => event.date === today).length,
+        };
+      }
       const published = memory.events.filter(
         (e) => e.status === 'published' && e.visibility === 'public' && !e.deleted_at
       );
@@ -753,6 +1043,18 @@ export const db = {
 
     async isMember(orgId: string, userId: string): Promise<boolean> {
       if (!orgId || !userId) return false;
+      if (isProduction) {
+        if (!UUID_PATTERN.test(orgId) || !UUID_PATTERN.test(userId)) return false;
+        const { data, error } = await (await getProductionAdminClient())
+          .from('organization_members')
+          .select('id')
+          .eq('organization_id', orgId)
+          .eq('user_id', userId)
+          .eq('is_active', true)
+          .maybeSingle();
+        if (error) throw new Error('Unable to verify organization membership.');
+        return Boolean(data?.id);
+      }
       const user = memory.users.find((u) => u.id === userId);
       if (user && ['organization_owner', 'organization_admin', 'organization_editor'].includes(user.role)) {
         return true;
@@ -763,6 +1065,14 @@ export const db = {
 
   categories: {
     async getAll(): Promise<EventCategory[]> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient())
+          .from('event_categories')
+          .select('*')
+          .order('name_en', { ascending: true });
+        if (error) throw new Error('Unable to load event categories.');
+        return (data || []) as EventCategory[];
+      }
       const cloudCats = await CloudSync.getCategories();
       const existingIds = new Set(memory.categories.map((c) => c.id));
       for (const cat of cloudCats) {
@@ -778,9 +1088,23 @@ export const db = {
       return [...memory.categories];
     },
     async findBySlug(slug: string): Promise<EventCategory | null> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient())
+          .from('event_categories')
+          .select('*')
+          .eq('slug', slug)
+          .maybeSingle();
+        if (error) throw new Error('Unable to load the event category.');
+        return data ? (data as EventCategory) : null;
+      }
       return memory.categories.find((c) => c.slug === slug) || null;
     },
     async create(catData: Omit<EventCategory, 'id'>): Promise<EventCategory> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient()).from('event_categories').insert(catData).select('*').single();
+        if (error || !data) throw new Error('Unable to create the event category.');
+        return data as EventCategory;
+      }
       const newCat: EventCategory = {
         ...catData,
         id: `cat-${Date.now()}`,
@@ -790,6 +1114,16 @@ export const db = {
       return newCat;
     },
     async update(id: string, updates: Partial<EventCategory>): Promise<EventCategory | null> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient())
+          .from('event_categories')
+          .update(updates)
+          .eq('id', id)
+          .select('*')
+          .maybeSingle();
+        if (error) throw new Error('Unable to update the event category.');
+        return data ? (data as EventCategory) : null;
+      }
       const idx = memory.categories.findIndex((c) => c.id === id);
       if (idx === -1) {
         await CloudSync.updateCategory(id, updates);
@@ -800,6 +1134,11 @@ export const db = {
       return memory.categories[idx];
     },
     async delete(id: string): Promise<boolean> {
+      if (isProduction) {
+        const { error } = await (await getProductionAdminClient()).from('event_categories').delete().eq('id', id);
+        if (error) throw new Error('Unable to delete the event category.');
+        return true;
+      }
       const idx = memory.categories.findIndex((c) => c.id === id);
       if (idx !== -1) {
         memory.categories.splice(idx, 1);
@@ -811,9 +1150,28 @@ export const db = {
 
   countries: {
     async getAll(): Promise<Country[]> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient()).from('countries').select('*').order('name_en');
+        if (error) throw new Error('Unable to load countries.');
+        return (data || []) as Country[];
+      }
       return [...memory.countries];
     },
     async findOrCreateByCode(countryCode: string, countryName?: string): Promise<Country> {
+      if (isProduction) {
+        const client = await getProductionAdminClient();
+        const code = countryCode.toUpperCase();
+        const { data: existing, error: lookupError } = await client.from('countries').select('*').eq('code', code).maybeSingle();
+        if (lookupError) throw new Error('Unable to look up the country.');
+        if (existing) return existing as Country;
+        const { data, error } = await client
+          .from('countries')
+          .insert({ code, name_en: countryName || code, name_ar: countryName || code, name_de: countryName || code, name_fr: countryName || code })
+          .select('*')
+          .single();
+        if (error || !data) throw new Error('Unable to create the country.');
+        return data as Country;
+      }
       const code = countryCode.toUpperCase();
       let found = memory.countries.find((c) => c.code === code || c.id === `c-${code.toLowerCase()}`);
       if (!found) {
@@ -833,12 +1191,31 @@ export const db = {
 
   cities: {
     async getAll(): Promise<City[]> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient()).from('cities').select('*').order('name_en');
+        if (error) throw new Error('Unable to load cities.');
+        return (data || []) as City[];
+      }
       return [...memory.cities];
     },
     async findByCountry(countryId: string): Promise<City[]> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient())
+          .from('cities')
+          .select('*')
+          .eq('country_id', countryId)
+          .order('name_en');
+        if (error) throw new Error('Unable to load cities.');
+        return (data || []) as City[];
+      }
       return memory.cities.filter((c) => c.country_id === countryId);
     },
     async create(cityData: Omit<City, 'id'>): Promise<City> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient()).from('cities').insert(cityData).select('*').single();
+        if (error || !data) throw new Error('Unable to create the city.');
+        return data as City;
+      }
       const newCity: City = {
         ...cityData,
         id: `city-${Date.now()}`,
@@ -847,6 +1224,12 @@ export const db = {
       return newCity;
     },
     async findOrCreateByName(cityName: string, countryId: string, lat?: number, lon?: number): Promise<City> {
+      if (isProduction) {
+        const { countryId: resolvedCountryId, cityId } = await resolveProductionLocation(countryId, cityName, lat || 0, lon || 0);
+        const { data, error } = await (await getProductionAdminClient()).from('cities').select('*').eq('id', cityId).single();
+        if (error || !data) throw new Error('Unable to resolve the city.');
+        return { ...(data as City), country_id: resolvedCountryId };
+      }
       const cleanName = cityName.trim();
       let city = memory.cities.find(
         (c) => c.name_en.toLowerCase() === cleanName.toLowerCase() || c.name_ar === cleanName
@@ -900,6 +1283,24 @@ export const db = {
 
   audit: {
     async create(log: AuditLog): Promise<AuditLog> {
+      if (isProduction) {
+        // Anonymous submissions have no profile FK. Keep the request working while
+        // only persisting audit rows that can be attributed to a real Auth user.
+        if (!UUID_PATTERN.test(log.actor_id)) return log;
+        const { error } = await (await getProductionAdminClient()).from('audit_logs').insert({
+          actor_id: log.actor_id,
+          actor_role: log.actor_role,
+          action: log.action,
+          entity_type: log.entity_type,
+          entity_id: log.entity_id,
+          reason: log.reason || null,
+          previous_values: log.previous_values || null,
+          new_values: log.new_values || null,
+          ip_address: log.ip_address || null,
+        });
+        if (error) throw new Error('Unable to save the audit log.');
+        return log;
+      }
       memory.auditLogs.unshift(log);
       return log;
     },
@@ -911,15 +1312,46 @@ export const db = {
 
   notifications: {
     async create(notif: NotificationItem): Promise<NotificationItem> {
+      if (isProduction) {
+        if (!UUID_PATTERN.test(notif.user_id)) return notif;
+        const { data, error } = await (await getProductionAdminClient())
+          .from('notifications')
+          .insert({
+            user_id: notif.user_id,
+            title: notif.title,
+            message: notif.message,
+            type: notif.type,
+            link: notif.link || null,
+            is_read: notif.is_read,
+          })
+          .select('*')
+          .single();
+        if (error || !data) throw new Error('Unable to save the notification.');
+        return data as NotificationItem;
+      }
       memory.notifications.unshift(notif);
       return notif;
     },
 
     async getByUser(userId: string): Promise<NotificationItem[]> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient())
+          .from('notifications')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false });
+        if (error) throw new Error('Unable to load notifications.');
+        return (data || []) as NotificationItem[];
+      }
       return memory.notifications.filter((n) => n.user_id === userId);
     },
 
     async markAsRead(id: string): Promise<boolean> {
+      if (isProduction) {
+        const { error } = await (await getProductionAdminClient()).from('notifications').update({ is_read: true }).eq('id', id);
+        if (error) throw new Error('Unable to mark the notification as read.');
+        return true;
+      }
       const n = memory.notifications.find((item) => item.id === id);
       if (!n) return false;
       n.is_read = true;
@@ -929,18 +1361,45 @@ export const db = {
 
   users: {
     async findById(id: string): Promise<UserProfile | null> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient()).from('profiles').select('*').eq('id', id).maybeSingle();
+        if (error) throw new Error('Unable to load the user profile.');
+        return data ? ({ ...data, is_active: true, is_2fa_enabled: false } as UserProfile) : null;
+      }
       return memory.users.find((u) => u.id === id) || null;
     },
 
     async findByEmail(email: string): Promise<UserProfile | null> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient())
+          .from('profiles')
+          .select('*')
+          .ilike('email', email.toLowerCase().trim())
+          .maybeSingle();
+        if (error) throw new Error('Unable to load the user profile.');
+        return data ? ({ ...data, is_active: true, is_2fa_enabled: false } as UserProfile) : null;
+      }
       return memory.users.find((u) => u.email.toLowerCase() === email.toLowerCase()) || null;
     },
 
     async findAdmins(): Promise<UserProfile[]> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient())
+          .from('profiles')
+          .select('*')
+          .in('role', ['super_admin', 'admin']);
+        if (error) throw new Error('Unable to load administrators.');
+        return (data || []).map((user) => ({ ...user, is_active: true, is_2fa_enabled: false } as UserProfile));
+      }
       return memory.users.filter((u) => u.role === 'super_admin' || u.role === 'admin');
     },
 
     async getAll(): Promise<UserProfile[]> {
+      if (isProduction) {
+        const { data, error } = await (await getProductionAdminClient()).from('profiles').select('*').order('created_at');
+        if (error) throw new Error('Unable to load users.');
+        return (data || []).map((user) => ({ ...user, is_active: true, is_2fa_enabled: false } as UserProfile));
+      }
       const cloudUsers = await CloudSync.getUsers();
       const existingIds = new Set(memory.users.map((u) => u.id));
       for (const u of cloudUsers) {
@@ -957,6 +1416,20 @@ export const db = {
     },
 
     async create(userData: Partial<UserProfile> & { email: string; full_name: string; role: UserProfile['role'] }): Promise<UserProfile> {
+      if (isProduction) {
+        const client = await getProductionAdminClient();
+        const { data: invitation, error: invitationError } = await client.auth.admin.inviteUserByEmail(userData.email.toLowerCase().trim(), {
+          data: { full_name: userData.full_name },
+        });
+        if (invitationError || !invitation.user) throw new Error('Unable to invite the user to Supabase Auth.');
+        const { data, error } = await client
+          .from('profiles')
+          .upsert({ id: invitation.user.id, email: invitation.user.email!, full_name: userData.full_name, role: userData.role })
+          .select('*')
+          .single();
+        if (error || !data) throw new Error('Unable to create the user profile.');
+        return { ...data, is_active: true, is_2fa_enabled: false } as UserProfile;
+      }
       const newUser: UserProfile = {
         id: `user-${Date.now()}`,
         email: userData.email.toLowerCase().trim(),
@@ -973,6 +1446,21 @@ export const db = {
     },
 
     async update(userId: string, updates: Partial<UserProfile>): Promise<UserProfile | null> {
+      if (isProduction) {
+        const allowed = Object.fromEntries(
+          ['email', 'full_name', 'avatar_url', 'role'].flatMap((field) =>
+            Object.prototype.hasOwnProperty.call(updates, field) ? [[field, updates[field as keyof UserProfile]]] : []
+          )
+        );
+        const { data, error } = await (await getProductionAdminClient())
+          .from('profiles')
+          .update({ ...allowed, updated_at: new Date().toISOString() })
+          .eq('id', userId)
+          .select('*')
+          .maybeSingle();
+        if (error) throw new Error('Unable to update the user profile.');
+        return data ? ({ ...data, is_active: true, is_2fa_enabled: false } as UserProfile) : null;
+      }
       const user = memory.users.find((u) => u.id === userId);
       if (user) {
         Object.assign(user, updates, { updated_at: new Date().toISOString() });
@@ -982,6 +1470,14 @@ export const db = {
     },
 
     async updateRole(userId: string, role: UserProfile['role']): Promise<boolean> {
+      if (isProduction) {
+        const { error } = await (await getProductionAdminClient())
+          .from('profiles')
+          .update({ role, updated_at: new Date().toISOString() })
+          .eq('id', userId);
+        if (error) throw new Error('Unable to update the user role.');
+        return true;
+      }
       const user = memory.users.find((u) => u.id === userId);
       if (user) {
         user.role = role;
@@ -992,6 +1488,11 @@ export const db = {
     },
 
     async delete(userId: string): Promise<boolean> {
+      if (isProduction) {
+        const { error } = await (await getProductionAdminClient()).auth.admin.deleteUser(userId);
+        if (error) throw new Error('Unable to delete the user.');
+        return true;
+      }
       const idx = memory.users.findIndex((u) => u.id === userId);
       if (idx !== -1) {
         memory.users.splice(idx, 1);

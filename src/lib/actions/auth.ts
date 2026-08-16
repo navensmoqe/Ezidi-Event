@@ -2,6 +2,7 @@
 
 import { cookies } from 'next/headers';
 import { db } from '@/lib/db';
+import { isProduction } from '@/lib/config/env';
 import { checkRateLimit } from '@/lib/security/rate-limiter';
 import { logAuditEvent } from '@/lib/services/audit';
 import { verifyTwoFactorToken } from '@/lib/security/two-factor';
@@ -22,6 +23,84 @@ export async function loginAction(formData: {
       success: false,
       error: 'محاولات دخول كثيرة خاطئة. يرجى الانتظار 60 ثانية والمحاولة مجدداً.',
     };
+  }
+
+  // Production always uses Supabase Auth. The demo-only JSON cookie and its
+  // demonstration passwords below are deliberately never accepted here.
+  if (isProduction) {
+    const { createClient } = await import('@/lib/supabase/server');
+    const supabase = await createClient();
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    if (authError || !authData.user) {
+      return { success: false, error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة.' };
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, email, full_name, role')
+      .eq('id', authData.user.id)
+      .maybeSingle();
+    if (profileError || !profile) {
+      await supabase.auth.signOut();
+      return { success: false, error: 'لم يُكتمل إعداد حسابك بعد. تواصل مع إدارة المنصة.' };
+    }
+
+    const user = {
+      ...profile,
+      role: profile.role as any,
+      is_active: true,
+      is_2fa_enabled: false,
+      created_at: authData.user.created_at,
+      updated_at: authData.user.updated_at || authData.user.created_at,
+    };
+
+    if (formData.portalType === 'admin') {
+      if (!['super_admin', 'admin', 'moderator', 'editor'].includes(user.role)) {
+        await supabase.auth.signOut();
+        return { success: false, error: 'تم رفض الوصول: ليس لديك صلاحيات إدارية على النظام.' };
+      }
+    }
+
+    if (formData.portalType === 'organization') {
+      const { data: membership, error: membershipError } = await supabase
+        .from('organization_members')
+        .select('organization_id, organizations(*)')
+        .eq('user_id', authData.user.id)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+      const organization = Array.isArray(membership?.organizations) ? membership?.organizations[0] : membership?.organizations;
+      if (membershipError || !membership?.organization_id || !organization) {
+        await supabase.auth.signOut();
+        return { success: false, error: 'هذا الحساب غير مرتبط بمنظمة معتمدة بعد.' };
+      }
+      const org = organization as any;
+      if (org.organization_status !== 'active') {
+        await supabase.auth.signOut();
+        return { success: false, error: 'تم تعليق حساب هذه المنظمة. يرجى التواصل مع إدارة المنصة.' };
+      }
+      await logAuditEvent({
+        actor_id: user.id,
+        actor_email: user.email,
+        actor_role: user.role,
+        action: 'USER_LOGGED_IN',
+        entity_type: 'organization',
+        entity_id: membership.organization_id,
+        new_values: { portal: 'organization' },
+      });
+      return { success: true, organization: org, user };
+    }
+
+    await logAuditEvent({
+      actor_id: user.id,
+      actor_email: user.email,
+      actor_role: user.role,
+      action: 'USER_LOGGED_IN',
+      entity_type: 'auth',
+      entity_id: user.id,
+      new_values: { portal: formData.portalType },
+    });
+    return { success: true, user };
   }
 
   // 2. Organization Portal Authentication
@@ -155,6 +234,33 @@ export async function loginAction(formData: {
 }
 
 export async function getCurrentUserSession() {
+  if (isProduction) {
+    const { createClient } = await import('@/lib/supabase/server');
+    const supabase = await createClient();
+    const { data: authData } = await supabase.auth.getUser();
+    if (!authData.user) return null;
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, email, full_name, role')
+      .eq('id', authData.user.id)
+      .maybeSingle();
+    if (!profile) return null;
+    const { data: membership } = await supabase
+      .from('organization_members')
+      .select('organization_id')
+      .eq('user_id', authData.user.id)
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle();
+    return {
+      userId: profile.id,
+      organizationId: membership?.organization_id,
+      email: profile.email,
+      role: profile.role,
+      full_name: profile.full_name,
+    };
+  }
+
   const cookie = cookies().get('ezidi_auth_session')?.value;
   if (!cookie) return null;
 
@@ -188,6 +294,12 @@ export async function logoutAction() {
     });
   }
 
-  cookies().delete('ezidi_auth_session');
+  if (isProduction) {
+    const { createClient } = await import('@/lib/supabase/server');
+    const supabase = await createClient();
+    await supabase.auth.signOut();
+  } else {
+    cookies().delete('ezidi_auth_session');
+  }
   return { success: true };
 }

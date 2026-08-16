@@ -58,7 +58,7 @@ export default function OrgLoginPage() {
                 {isRtl ? 'دخول بوابة المنظمات' : 'Organization Portal'}
               </h1>
               <span className="text-[11px] text-amber-400 font-medium">
-                {isRtl ? 'تسجيل الدخول بالبريد وكلمة السر' : 'Secure Credential Login'}
+                {isRtl ? 'دخول آمن عبر Supabase Auth' : 'Secure Supabase Auth Login'}
               </span>
             </div>
           </div>
@@ -143,8 +143,8 @@ export default function OrgLoginPage() {
           </span>
           <p className="leading-relaxed">
             {isRtl
-              ? 'يتم إرسال بيانات الدخول (البريد وكلمة السر) من قِبل إدارة المنصة، ويمكن لصاحب المنظمة تغيير كلمة المرور وتعديل كافة البيانات من داخل لوحة التحكم بعد الدخول.'
-              : 'Login credentials are provided by platform administrators. You can update your password and details anytime from within your organization settings.'}
+              ? 'بعد اعتماد المنظمة تصل دعوة آمنة إلى البريد الرسمي لتعيين كلمة المرور. استخدم ذلك البريد وكلمة المرور للدخول إلى لوحة المنظمة.'
+              : 'After approval, a secure invitation is sent to the official email so the owner can set a password and access the organization dashboard.'}
           </p>
         </div>
 

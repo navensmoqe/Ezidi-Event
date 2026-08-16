@@ -3,17 +3,15 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { loginAction } from '@/lib/actions/auth';
-import { ShieldCheck, Lock, Mail, KeyRound, AlertCircle, ArrowRight, Eye, EyeOff, Globe } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, AlertCircle, ArrowRight, Eye, EyeOff, Globe } from 'lucide-react';
 import Link from 'next/link';
 
 export default function AdminLoginPage() {
   const router = useRouter();
   const [lang, setLang] = useState<'ar' | 'en'>('ar');
-  const [email, setEmail] = useState('admin@ezidievents.org');
-  const [password, setPassword] = useState('admin123456');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [totpCode, setTotpCode] = useState('');
-  const [requires2FA, setRequires2FA] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,15 +32,12 @@ export default function AdminLoginPage() {
     const res = await loginAction({
       email,
       password,
-      totpCode: requires2FA ? totpCode : undefined,
       portalType: 'admin',
     });
 
     setLoading(false);
     if (!res.success) {
       setError(res.error || (isRtl ? 'فشل تسجيل الدخول. يرجى التحقق من البيانات.' : 'Authentication failed.'));
-    } else if (res.requires2FA) {
-      setRequires2FA(true);
     } else {
       router.push('/admin');
     }
@@ -93,8 +88,7 @@ export default function AdminLoginPage() {
         )}
 
         <form onSubmit={handleLogin} className="space-y-4">
-          {!requires2FA ? (
-            <>
+          <>
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                   {isRtl ? 'البريد الإلكتروني للإدارة' : 'Administrator Email'}
@@ -137,32 +131,7 @@ export default function AdminLoginPage() {
                   </button>
                 </div>
               </div>
-            </>
-          ) : (
-            <div className="space-y-2 animate-in fade-in">
-              <label className="block text-xs font-bold text-amber-300 mb-1">
-                {isRtl ? 'رمز التحقق بخطوتين (2FA TOTP Code)' : '2FA Authenticator Code'}
-              </label>
-              <div className="relative">
-                <KeyRound className={`w-4 h-4 text-amber-400 absolute top-1/2 -translate-y-1/2 ${isRtl ? 'right-3.5' : 'left-3.5'}`} />
-                <input
-                  type="text"
-                  required
-                  autoFocus
-                  placeholder="123456"
-                  maxLength={6}
-                  value={totpCode}
-                  onChange={(e) => setTotpCode(e.target.value)}
-                  className={`w-full py-3 rounded-xl bg-slate-900 border border-amber-500 text-amber-300 text-center font-mono text-lg tracking-widest font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isRtl ? 'pr-10 pl-4' : 'pl-10 pr-4'
-                  }`}
-                />
-              </div>
-              <p className="text-[11px] text-slate-400">
-                {isRtl ? 'أدخل الرمز المكون من 6 أرقام من تطبيق التحقق (Authenticator).' : 'Enter the 6-digit code from your authenticator app.'}
-              </p>
-            </div>
-          )}
+          </>
 
           <div className="pt-2">
             <button

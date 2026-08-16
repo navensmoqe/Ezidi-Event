@@ -10,6 +10,8 @@ import { NotificationService } from '@/lib/services/notifications';
 import { EventItem, UserRole } from '@/types/database';
 import { generateGoogleMapsUrl } from '@/lib/maps/google-maps';
 import { revalidatePath } from 'next/cache';
+import { isProduction } from '@/lib/config/env';
+import { getCurrentUserSession } from '@/lib/actions/auth';
 
 const createEventSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters').max(200),
@@ -42,9 +44,19 @@ const createEventSchema = z.object({
   official_website: z.string().url().optional().or(z.literal('')),
 });
 
+type TrustedUserContext = { id: string; role: UserRole; email: string };
+
+async function getTrustedUserContext(fallback?: TrustedUserContext): Promise<TrustedUserContext | null | undefined> {
+  if (!isProduction) return fallback;
+  const session = await getCurrentUserSession();
+  if (!session) return null;
+  return { id: session.userId, role: session.role as UserRole, email: session.email };
+}
+
 export async function createEventAction(formData: unknown, userContext?: { id: string; role: UserRole; email: string }) {
+  const trustedUser = await getTrustedUserContext(userContext);
   // 1. Rate Limiting Check
-  const rateLimitKey = userContext?.id || 'anonymous-submitter';
+  const rateLimitKey = trustedUser?.id || 'anonymous-submitter';
   const rateCheck = await checkRateLimit(rateLimitKey, 'EVENT_SUBMISSION');
   if (!rateCheck.success) {
     return {
@@ -77,11 +89,14 @@ export async function createEventAction(formData: unknown, userContext?: { id: s
   let visibility: EventItem['visibility'] = 'private';
   let verificationStatus: EventItem['event_verification_status'] = 'unverified';
 
-  if (userContext?.role === 'super_admin' || userContext?.role === 'admin') {
+  if (trustedUser?.role === 'super_admin' || trustedUser?.role === 'admin') {
     status = 'published';
     visibility = 'public';
     verificationStatus = 'admin_verified';
   } else if (data.organization_id) {
+    if (isProduction && (!trustedUser || !(await db.organizations.isMember(data.organization_id, trustedUser.id)))) {
+      return { success: false, error: 'لا تملك صلاحية النشر باسم هذه المنظمة.' };
+    }
     const org = await db.organizations.findById(data.organization_id);
     if (
       org &&
@@ -107,7 +122,7 @@ export async function createEventAction(formData: unknown, userContext?: { id: s
   let resolvedCityId = data.city_id;
   let resolvedCountryId = data.country_id;
 
-  if (data.city_id && (data.city_id.startsWith('custom:') || !data.city_id.startsWith('city-'))) {
+  if (!isProduction && data.city_id && (data.city_id.startsWith('custom:') || !data.city_id.startsWith('city-'))) {
     const rawCityName = data.city_id.replace(/^custom:/, '');
     const cityObj = await db.cities.findOrCreateByName(rawCityName, resolvedCountryId, data.latitude, data.longitude);
     resolvedCityId = cityObj.id;
@@ -157,20 +172,20 @@ export async function createEventAction(formData: unknown, userContext?: { id: s
     status,
     visibility,
     event_verification_status: verificationStatus,
-    is_demo: true,
+    is_demo: !isProduction,
     is_featured: false,
     source_url: data.source_url || null,
     contact_email: data.contact_email || null,
     contact_phone: data.contact_phone || null,
     official_website: data.official_website || null,
-    created_by: userContext?.id || 'anonymous-user',
+    created_by: trustedUser?.id || null,
   });
 
   // 8. Audit Log
   await logAuditEvent({
-    actor_id: userContext?.id || 'anonymous',
-    actor_email: userContext?.email,
-    actor_role: userContext?.role || 'user',
+    actor_id: trustedUser?.id || 'anonymous',
+    actor_email: trustedUser?.email,
+    actor_role: trustedUser?.role || 'user',
     action: status === 'published' ? 'EVENT_DIRECT_PUBLISHED' : 'EVENT_SUBMITTED_FOR_REVIEW',
     entity_type: 'event',
     entity_id: newEvent.id,
@@ -211,20 +226,22 @@ export async function updateEventAction(
   formData: Partial<EventItem>,
   userContext: { id: string; role: UserRole; email: string }
 ) {
+  const trustedUser = await getTrustedUserContext(userContext);
+  if (!trustedUser) return { success: false, error: 'Unauthorized: Please sign in again.' };
   const existing = await db.events.findById(eventId);
   if (!existing) {
     return { success: false, error: 'Event not found.' };
   }
 
-  const isAdmin = userContext.role === 'super_admin' || userContext.role === 'admin';
+  const isAdmin = trustedUser.role === 'super_admin' || trustedUser.role === 'admin';
   const isPublished = existing.status === 'published';
 
   // 1. IDOR & Ownership Authorization Check
   if (!isAdmin) {
-    const isCreator = existing.created_by === userContext.id;
+    const isCreator = existing.created_by === trustedUser.id;
     let isOrgMember = false;
     if (existing.organization_id) {
-      isOrgMember = await db.organizations.isMember(existing.organization_id, userContext.id);
+      isOrgMember = await db.organizations.isMember(existing.organization_id, trustedUser.id);
     }
 
     if (!isCreator && !isOrgMember) {
@@ -267,15 +284,15 @@ export async function updateEventAction(
       event_id: eventId,
       proposed_data: safeData,
       changed_fields: changedSensitiveFields as string[],
-      submitted_by: userContext.id,
+      submitted_by: trustedUser.id,
       status: 'pending',
       admin_notes: null,
     });
 
     await logAuditEvent({
-      actor_id: userContext.id,
-      actor_email: userContext.email,
-      actor_role: userContext.role,
+      actor_id: trustedUser.id,
+      actor_email: trustedUser.email,
+      actor_role: trustedUser.role,
       action: 'EVENT_SENSITIVE_CHANGE_PROPOSED',
       entity_type: 'event',
       entity_id: eventId,
@@ -304,9 +321,9 @@ export async function updateEventAction(
   const updated = await db.events.update(eventId, safeData);
 
   await logAuditEvent({
-    actor_id: userContext.id,
-    actor_email: userContext.email,
-    actor_role: userContext.role,
+    actor_id: trustedUser.id,
+    actor_email: trustedUser.email,
+    actor_role: trustedUser.role,
     action: 'EVENT_UPDATED',
     entity_type: 'event',
     entity_id: eventId,
@@ -321,6 +338,8 @@ export async function updateEventAction(
 }
 
 export async function cancelEventAction(eventId: string, reason: string, userContext: { id: string; role: UserRole; email: string }) {
+  const trustedUser = await getTrustedUserContext(userContext);
+  if (!trustedUser) return { success: false, error: 'Unauthorized: Please sign in again.' };
   if (!reason || reason.trim().length < 5) {
     return { success: false, error: 'A valid reason is required to cancel an event.' };
   }
@@ -328,12 +347,12 @@ export async function cancelEventAction(eventId: string, reason: string, userCon
   const event = await db.events.findById(eventId);
   if (!event) return { success: false, error: 'Event not found.' };
 
-  const isAdmin = userContext.role === 'super_admin' || userContext.role === 'admin';
+  const isAdmin = trustedUser.role === 'super_admin' || trustedUser.role === 'admin';
   if (!isAdmin) {
-    const isCreator = event.created_by === userContext.id;
+    const isCreator = event.created_by === trustedUser.id;
     let isOrgMember = false;
     if (event.organization_id) {
-      isOrgMember = await db.organizations.isMember(event.organization_id, userContext.id);
+      isOrgMember = await db.organizations.isMember(event.organization_id, trustedUser.id);
     }
     if (!isCreator && !isOrgMember) {
       return { success: false, error: 'Unauthorized: You do not have permission to cancel this event.' };
@@ -343,9 +362,9 @@ export async function cancelEventAction(eventId: string, reason: string, userCon
   await db.events.update(eventId, { status: 'cancelled' });
 
   await logAuditEvent({
-    actor_id: userContext.id,
-    actor_email: userContext.email,
-    actor_role: userContext.role,
+    actor_id: trustedUser.id,
+    actor_email: trustedUser.email,
+    actor_role: trustedUser.role,
     action: 'EVENT_CANCELLED',
     entity_type: 'event',
     entity_id: eventId,
@@ -358,7 +377,8 @@ export async function cancelEventAction(eventId: string, reason: string, userCon
 }
 
 export async function softDeleteEventAction(eventId: string, reason: string, userContext: { id: string; role: UserRole; email: string }) {
-  if (userContext.role !== 'super_admin' && userContext.role !== 'admin') {
+  const trustedUser = await getTrustedUserContext(userContext);
+  if (!trustedUser || (trustedUser.role !== 'super_admin' && trustedUser.role !== 'admin')) {
     return { success: false, error: 'Unauthorized: Only administrators can soft delete events.' };
   }
 
@@ -369,9 +389,9 @@ export async function softDeleteEventAction(eventId: string, reason: string, use
   await db.events.softDelete(eventId);
 
   await logAuditEvent({
-    actor_id: userContext.id,
-    actor_email: userContext.email,
-    actor_role: userContext.role,
+    actor_id: trustedUser.id,
+    actor_email: trustedUser.email,
+    actor_role: trustedUser.role,
     action: 'EVENT_SOFT_DELETED',
     entity_type: 'event',
     entity_id: eventId,
