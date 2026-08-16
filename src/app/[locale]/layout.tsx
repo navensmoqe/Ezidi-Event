@@ -6,6 +6,7 @@ import { getMessages } from 'next-intl/server';
 import { routing } from '@/i18n/routing';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
+import { RecoveryHashRedirect } from '@/components/auth/RecoveryHashRedirect';
 import '@/app/globals.css';
 
 export const metadata: Metadata = {
@@ -44,6 +45,7 @@ export default async function LocaleLayout({
     <html lang={locale} dir={direction} className="dark">
       <body className="min-h-screen flex flex-col bg-[#0B0F19] text-slate-100 antialiased selection:bg-amber-500 selection:text-slate-950">
         <NextIntlClientProvider messages={messages} locale={locale}>
+          <RecoveryHashRedirect />
           <Header />
           <main className="flex-1 w-full">{children}</main>
           <Footer />

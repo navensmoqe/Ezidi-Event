@@ -1,19 +1,51 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { LockKeyhole, ShieldCheck } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { setPasswordAction } from '@/lib/actions/auth';
+import { createClient } from '@/lib/supabase/client';
 
 export default function SetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const supabase = useMemo(() => createClient(), []);
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [error, setError] = useState<string | null>(
     searchParams.get('error') ? 'رابط الدعوة غير صالح أو انتهت صلاحيته. اطلب دعوة جديدة.' : null
   );
   const [loading, setLoading] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
+
+  useEffect(() => {
+    async function initializeRecoverySession() {
+      const hashParams = new URLSearchParams(window.location.hash.slice(1));
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
+
+      if (hashParams.get('type') === 'recovery' && accessToken && refreshToken) {
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (sessionError) {
+          setError('رابط الاستعادة غير صالح أو انتهت صلاحيته. اطلب رابطاً جديداً.');
+        } else {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      } else {
+        const { data } = await supabase.auth.getSession();
+        if (!data.session) {
+          setError('افتح أحدث رابط استعادة مرسل إلى بريدك لإكمال تعيين كلمة المرور.');
+        }
+      }
+
+      setSessionReady(true);
+    }
+
+    void initializeRecoverySession();
+  }, [supabase]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -76,10 +108,10 @@ export default function SetPasswordForm() {
           </label>
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !sessionReady}
             className="w-full rounded-xl bg-amber-400 py-3 font-black text-slate-950 transition hover:bg-amber-300 disabled:opacity-60"
           >
-            {loading ? 'جارٍ الحفظ...' : 'حفظ كلمة المرور والدخول'}
+            {loading ? 'جارٍ الحفظ...' : !sessionReady ? 'جارٍ التحقق من رابط الاستعادة...' : 'حفظ كلمة المرور والدخول'}
           </button>
         </form>
       </section>
