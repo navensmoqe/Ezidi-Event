@@ -23,7 +23,7 @@ import {
   INITIAL_AUDIT_LOGS,
   INITIAL_NOTIFICATIONS,
 } from './mock-data';
-import { isProduction } from '@/lib/config/env';
+import { env, isProduction } from '@/lib/config/env';
 import { CloudSync } from './cloud-sync';
 export { CloudSync };
 
@@ -1420,6 +1420,7 @@ export const db = {
         const client = await getProductionAdminClient();
         const { data: invitation, error: invitationError } = await client.auth.admin.inviteUserByEmail(userData.email.toLowerCase().trim(), {
           data: { full_name: userData.full_name },
+          redirectTo: new URL('/auth/callback', env.NEXT_PUBLIC_APP_URL).toString(),
         });
         if (invitationError || !invitation.user) throw new Error('Unable to invite the user to Supabase Auth.');
         const { data, error } = await client

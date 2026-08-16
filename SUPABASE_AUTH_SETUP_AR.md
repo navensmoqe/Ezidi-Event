@@ -18,13 +18,14 @@
 3. افتح **Authentication → URL Configuration** وأضف:
 
    - Site URL: `https://ezidi-event.vercel.app`
-   - Redirect URL: `https://ezidi-event.vercel.app/organization/login`
+   - Redirect URL: `https://ezidi-event.vercel.app/auth/callback`
 
 4. أعد نشر Vercel بعد رفع هذا التحديث.
 
 النتيجة:
 
 - لوحة الإدارة تسجل الدخول عبر Supabase Auth، ولا تقبل كلمات المرور التجريبية.
+- رابط الدعوة يفتح صفحة آمنة لتعيين كلمة المرور ثم يوجّه المدير إلى لوحة الإدارة.
 - عند اعتماد منظمة، ينشئ النظام دعوة Supabase Auth للبريد الرسمي ويربط الحساب بالمنظمة كمالك.
 - الفعاليات والتصنيفات والمدن تُحفظ في PostgreSQL، وصور الملصقات في Bucket باسم `event-posters`.
 

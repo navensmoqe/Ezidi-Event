@@ -75,6 +75,14 @@ function getDemoSession(request: NextRequest) {
 export default async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
+  // Supabase invite and recovery links can fall back to the configured Site URL.
+  // Preserve the one-time authorization code and send it to the dedicated callback.
+  if (pathname === '/' && request.nextUrl.searchParams.has('code')) {
+    const callbackUrl = new URL('/auth/callback', request.url);
+    callbackUrl.search = request.nextUrl.search;
+    return NextResponse.redirect(callbackUrl);
+  }
+
   // Administrative routes are deliberately not localized.
   const localeAdminMatch = pathname.match(/^\/(en|ar|de|fr)\/admin(\/.*)?$/);
   if (localeAdminMatch) {

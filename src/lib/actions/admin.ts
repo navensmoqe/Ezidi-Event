@@ -5,7 +5,7 @@ import { logAuditEvent } from '@/lib/services/audit';
 import { NotificationService } from '@/lib/services/notifications';
 import { UserRole, EventVerificationStatus } from '@/types/database';
 import { getCurrentUserSession } from '@/lib/actions/auth';
-import { isProduction } from '@/lib/config/env';
+import { env, isProduction } from '@/lib/config/env';
 
 type AdminContext = { id: string; role: UserRole; email: string };
 
@@ -27,6 +27,7 @@ async function provisionOrganizationOwner(orgId: string, email: string, fullName
   if (!user) {
     const { data: invitation, error: invitationError } = await client.auth.admin.inviteUserByEmail(normalizedEmail, {
       data: { full_name: fullName },
+      redirectTo: new URL('/auth/callback', env.NEXT_PUBLIC_APP_URL).toString(),
     });
     if (invitationError || !invitation.user) return 'تم التحقق، لكن تعذر إرسال دعوة دخول مالك المنظمة.';
     user = invitation.user;

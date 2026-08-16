@@ -281,6 +281,47 @@ export async function getCurrentUserSession() {
   }
 }
 
+export async function setPasswordAction(password: string) {
+  if (!isProduction) {
+    return { success: false, error: 'تعيين كلمة المرور متاح بعد إعداد Supabase في وضع الإنتاج.' };
+  }
+  if (password.length < 12) {
+    return { success: false, error: 'يجب أن تتكون كلمة المرور من 12 حرفاً على الأقل.' };
+  }
+
+  const { createClient } = await import('@/lib/supabase/server');
+  const supabase = await createClient();
+  const { data: authData } = await supabase.auth.getUser();
+  if (!authData.user) {
+    return { success: false, error: 'انتهت صلاحية رابط الدعوة. اطلب رابطاً جديداً من إدارة المنصة.' };
+  }
+
+  const { error: updateError } = await supabase.auth.updateUser({ password });
+  if (updateError) return { success: false, error: 'تعذر حفظ كلمة المرور. أعد فتح رابط الدعوة وحاول مجدداً.' };
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id, email, role')
+    .eq('id', authData.user.id)
+    .maybeSingle();
+  if (!profile) return { success: false, error: 'تم حفظ كلمة المرور، لكن لم يتم العثور على ملف الحساب.' };
+
+  await logAuditEvent({
+    actor_id: profile.id,
+    actor_email: profile.email,
+    actor_role: profile.role as any,
+    action: 'PASSWORD_SET',
+    entity_type: 'auth',
+    entity_id: profile.id,
+    reason: 'Password set through Supabase invitation or recovery session.',
+  });
+
+  const redirectTo = ['super_admin', 'admin', 'moderator', 'editor'].includes(profile.role)
+    ? '/admin'
+    : '/organization/dashboard';
+  return { success: true, redirectTo };
+}
+
 export async function logoutAction() {
   const current = await getCurrentUserSession();
   if (current) {
